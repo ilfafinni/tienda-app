@@ -1,0 +1,19 @@
+{
+  "name": "Mi Tienda",
+  "short_name": "Mi Tienda",
+  "description": "Mapa, búsqueda y escaneo de productos de la tienda",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3b82f6",
+  "orientation": "portrait",
+  "scope": "/",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "48x48",
+      "type": "image/svg+xml"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "routes": [
+    { "src": "/manifest.json", "dest": "/web/manifest.json" },
+    { "src": "/favicon.svg", "dest": "/web/favicon.svg" },
+    { "src": "/(.*)", "dest": "/web/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/web/manifest.json",
+      "headers": [
+        { "key": "Content-Type", "value": "application/manifest+json" }
+      ]
+    }
+  ]
+}

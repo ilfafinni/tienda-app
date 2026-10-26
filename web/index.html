@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#3b82f6">
+  <title>Mi Tienda - Mapa, búsqueda y escaneo</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #f8fafc; color: #1e293b; }
+    #app { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    header { background: #3b82f6; color: #fff; padding: 12px 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
+    header h1 { font-size: 18px; font-weight: 700; }
+    .back { border: none; background: rgba(255,255,255,0.2); color: #fff; border-radius: 8px; padding: 6px 12px; font-size: 16px; cursor: pointer; }
+    .back:hidden { display: none; }
+    main { flex: 1; overflow-y: auto; padding: 16px; }
+    section.screen { display: none; }
+    section.screen.active { display: block; }
+    .title { font-size: 26px; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.5px; }
+    .subtitle { color: #64748b; font-size: 15px; margin-bottom: 24px; text-align: center; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .card { background: #fff; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; align-items: center; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); cursor: pointer; transition: transform .1s; }
+    .card:active { transform: scale(0.97); }
+    .card .icon { font-size: 40px; margin-bottom: 10px; }
+    .card .t { font-weight: 700; font-size: 16px; margin-bottom: 4px; }
+    .card .d { font-size: 13px; color: #64748b; }
+    /* search */
+    .search-box { position: relative; margin-bottom: 16px; }
+    .search-box input { width: 100%; padding: 12px 16px 12px 42px; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 15px; outline: none; background: #fff; }
+    .search-box input:focus { border-color: #3b82f6; }
+    .search-box .ico { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 18px; color: #94a3b8; }
+    .prod-list { display: flex; flex-direction: column; gap: 10px; }
+    .prod { background: #fff; border-radius: 12px; padding: 12px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 4px rgba(0,0,0,0.05); cursor: pointer; }
+    .prod .info .code { font-weight: 800; font-size: 13px; color: #3b82f6; }
+    .prod .info .name { font-weight: 700; font-size: 15px; margin-top: 2px; }
+    .prod .info .meta { font-size: 12px; color: #64748b; margin-top: 2px; }
+    .prod .price { font-weight: 800; font-size: 16px; }
+    .empty { text-align: center; color: #64748b; margin-top: 40px; }
+    .loading { text-align: center; color: #64748b; margin-top: 40px; }
+    /* map */
+    .map-wrap { border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background: #fff; height: 60vh; position: relative; }
+    svg#map { width: 100%; height: 100%; display: block; cursor: pointer; }
+    .zone { stroke: #fff; stroke-width: 2; cursor: pointer; transition: filter .2s; }
+    .zone:hover { filter: brightness(1.15); }
+    .zone-label { font-size: 11px; fill: #fff; font-weight: 700; pointer-events: none; text-anchor: middle; dominant-baseline: middle; }
+    .map-controls { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .btn { border: none; background: #3b82f6; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; }
+    .btn:active { background: #2563eb; }
+    .btn.secondary { background: #f1f5f9; color: #475569; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    /* scanner */
+    .scan-box { background: #fff; border-radius: 16px; padding: 24px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .scan-box .big { font-size: 48px; margin-bottom: 16px; }
+    .scan-box input { width: 80%; max-width: 300px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 16px; text-align: center; margin-bottom: 16px; }
+    .result-card { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 16px; margin-top: 16px; text-align: left; }
+    .result-card .t { font-weight: 800; font-size: 17px; margin-bottom: 6px; }
+    .result-card .m { font-size: 13px; color: #475569; margin: 2px 0; }
+    .result-card .zone { color: #3b82f6; font-weight: 700; }
+    .error { color: #dc2626; font-size: 14px; margin-top: 10px; }
+    .footer { padding: 12px 16px; color: #94a3b8; font-size: 12px; text-align: center; border-top: 1px solid #e2e8f0; }
+    @media (max-width: 480px) { .grid { grid-template-columns: 1fr; } .map-wrap { height: 50vh; } }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <button class="back" id="btnBack" onclick="goBack()">←</button>
+      <h1 id="hTitle">Mi Tienda</h1>
+    </header>
+    <main>
+      <!-- Home -->
+      <section class="screen active" id="screenHome">
+        <div class="title">👕 Mi Tienda</div>
+        <div class="subtitle">Mapa, búsqueda y escaneo de productos</div>
+        <div class="grid">
+          <div class="card" onclick="show('map')">
+            <div class="icon">🗺️</div>
+            <div class="t">Mapa de la tienda</div>
+            <div class="d">Ver dónde está cada producto</div>
+          </div>
+          <div class="card" onclick="show('search')">
+            <div class="icon">🔍</div>
+            <div class="t">Buscar producto</div>
+            <div class="d">Por código, nombre o categoría</div>
+          </div>
+          <div class="card" onclick="show('scan')">
+            <div class="icon">📷</div>
+            <div class="t">Escanear producto</div>
+            <div class="d">Lee el código de barras</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Map -->
+      <section class="screen" id="screenMap">
+        <div class="title">🗺️ Mapa de la tienda</div>
+        <div class="subtitle">Toca un mueble para ver sus productos</div>
+        <div class="map-wrap" id="mapWrap">
+          <svg id="map" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet"></svg>
+        </div>
+        <div id="mapEmpty" style="display:none; text-align:center; color:#64748b; margin-top:20px;">No hay zonas cargadas.</div>
+        <div class="map-controls">
+          <button class="btn secondary" onclick="show('home')">Volver</button>
+        </div>
+      </section>
+
+      <!-- Search -->
+      <section class="screen" id="screenSearch">
+        <div class="title">🔍 Buscar producto</div>
+        <div class="search-box">
+          <span class="ico">🔍</span>
+          <input id="inpSearch" placeholder="Código, nombre o categoría (ej: PNT-001, polera)" autocomplete="off">
+        </div>
+        <div id="searchResults"></div>
+      </section>
+
+      <!-- Scan -->
+      <section class="screen" id="screenScan">
+        <div class="title">📷 Escanear producto</div>
+        <div class="subtitle">En web escribe o escanea el código del producto</div>
+        <div class="scan-box">
+          <div class="big">📦</div>
+          <input id="inpScan" placeholder="Código del producto (ej: PNT-001)" autocomplete="off">
+          <div class="result-card" id="cardResult" style="display:none;"></div>
+          <div id="scanError" class="error"></div>
+        </div>
+        <div class="map-controls" style="justify-content:center;">
+          <button class="btn secondary" onclick="show('home')">Volver</button>
+        </div>
+      </section>
+    </main>
+    <div class="footer">Mi Tienda · zona web</div>
+  </div>
+
+  <script>
+    const API = "https://tienda-server-six.vercel.app";
+    let zones = [], products = [];
+
+    async function api(path) {
+      const r = await fetch(`${API}${path}`);
+      if (!r.ok) throw new Error("Error " + r.status);
+      return r.json();
+    }
+
+    function show(screen) {
+      document.querySelectorAll("section.screen").forEach(s => s.classList.remove("active"));
+      document.getElementById("screen" + screen.charAt(0).toUpperCase() + screen.slice(1)).classList.add("active");
+      document.getElementById("btnBack").style.display = screen === "home" ? "none" : "inline-block";
+      document.getElementById("hTitle").textContent =
+        { home: "Mi Tienda", map: "Mapa de la tienda", search: "Buscar producto", scan: "Escanear producto" }[screen];
+      if (screen === "map") renderMap();
+      if (screen === "scan") { document.getElementById("inpScan").value = ""; document.getElementById("cardResult").style.display = "none"; document.getElementById("scanError").textContent = ""; }
+    }
+
+    function goBack() { show("home"); }
+
+    async function loadData() {
+      try {
+        zones = await api("/api/zones");
+        products = await api("/api/products");
+      } catch (e) { console.error(e); }
+    }
+
+    // ---------- HOME ----------
+    document.getElementById("inpSearch").addEventListener("input", debounce(renderSearch, 300));
+
+    // ---------- SEARCH ----------
+    function renderSearch() {
+      const q = document.getElementById("inpSearch").value.toLowerCase();
+      const box = document.getElementById("searchResults");
+      if (!q.trim()) { box.innerHTML = ""; return; }
+      const res = products.filter(p =>
+        (p.code && p.code.toLowerCase().includes(q)) ||
+        (p.name && p.name.toLowerCase().includes(q)) ||
+        (p.category && p.category.toLowerCase().includes(q))
+      );
+      if (res.length === 0) { box.innerHTML = '<div class="empty">No se encontraron productos</div>'; return; }
+      box.innerHTML = res.map(p => {
+        const z = zones.find(z => z.id === p.zone_id);
+        return `
+        <div class="prod" onclick="showZone(${p.zone_id || 0})">
+          <div class="info">
+            <div class="code">${p.code}</div>
+            <div class="name">${p.name}</div>
+            <div class="meta">${p.category} • ${p.size || "-"} • ${p.color || "-"} ${z ? "📍 " + z.name + " (" + z.type + ")" : "Sin zona"}</div>
+          </div>
+          <div class="price">${(p.price || 0).toLocaleString("es-CL")}</div>
+        </div>`;
+      }).join("");
+    }
+
+    function debounce(fn, wait) {
+      let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
+    }
+
+    // ---------- MAP ----------
+    function renderMap() {
+      const svg = document.getElementById("map");
+      const empty = document.getElementById("mapEmpty");
+      if (!zones || zones.length === 0) { svg.innerHTML = ""; empty.style.display = "block"; return; }
+      empty.style.display = "none";
+      let html = "";
+      zones.forEach(z => {
+        const labelX = z.x + (z.w || 0) / 2;
+        const labelY = z.y + (z.h || 0) / 2;
+        const zoneProds = products.filter(p => p.zone_id === z.id).length;
+        html += `
+          <rect class="zone" id="z${z.id}" x="${z.x}" y="${z.y}" width="${z.w || 100}" height="${z.h || 80}" rx="12" ry="12" fill="${z.color || "#3b82f6"}" data-id="${z.id}" onclick="selectZone(${z.id})"></rect>
+          <text class="zone-label" x="${labelX}" y="${labelY}" data-id="${z.id}" onclick="selectZone(${z.id})">${z.name}</text>
+          ${zoneProds > 0 ? `<text class="zone-label" x="${labelX}" y="${labelY + 16}" fill="#ffe4e4" font-size="10" font-weight="600" data-id="${z.id}" onclick="selectZone(${z.id})">${zoneProds} productos</text>` : ""}
+        `;
+      });
+      svg.innerHTML = html;
+    }
+
+    function selectZone(id) {
+      const z = zones.find(z => z.id === id);
+      if (!z) return;
+      const prods = products.filter(p => p.zone_id === id);
+      alert(z.name + "\n" + (prods.length ? prods.map(p => "• " + p.name).join("\n") : "Sin productos asignados"));
+    }
+
+    function showZone(id) {
+      if (!id) return;
+      show("map");
+      setTimeout(() => {
+        const el = document.getElementById("z" + id);
+        if (el) el.scrollIntoView?.({ behavior: "smooth", block: "center", inline: "center" });
+      }, 300);
+    }
+
+    // ---------- SCAN ----------
+    document.getElementById("inpScan").addEventListener("keydown", async (e) => {
+      if (e.key !== "Enter") return;
+      const code = document.getElementById("inpScan").value.trim();
+      if (!code) return;
+      document.getElementById("scanError").textContent = "";
+      document.getElementById("cardResult").style.display = "none";
+      try {
+        const p = await api("/api/products/" + code);
+        const z = zones.find(z => z.id === p.zone_id);
+        document.getElementById("cardResult").style.display = "block";
+        document.getElementById("cardResult").innerHTML = `
+          <div class="t">Producto escaneado</div>
+          <div class="m"><strong>Código:</strong> ${p.code}</div>
+          <div class="m"><strong>Nombre:</strong> ${p.name}</div>
+          <div class="m"><strong>Categoría:</strong> ${p.category} • ${p.size || "-"} • ${p.color || "-"}</div>
+          <div class="m"><strong>Precio:</strong> ${(p.price || 0).toLocaleString("es-CL")}</div>
+          <div class="m zone">📍 ${z ? z.name : "Sin zona asignada"} ${z ? "(" + z.type + ")" : ""}</div>
+        `;
+        // registrar escaneo
+        try { await apiFetch("/api/scans", { method: "POST", body: JSON.stringify({ product_code: code, device: "web" }) }); } catch (err) {}
+      } catch (err) {
+        document.getElementById("scanError").textContent = 'Producto "' + code + '" no encontrado.';
+      }
+    });
+
+    async function apiFetch(path, opts) {
+      const r = await fetch(`${API}${path}`, Object.assign({ headers: { "Content-Type": "application/json" } }, opts));
+      if (!r.ok) throw new Error("Error " + r.status);
+      return r.json();
+    }
+
+    // ---------- PWA install prompt ----------
+    let deferredPrompt;
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const btn = document.createElement("button");
+      btn.textContent = "Instalar app";
+      btn.className = "btn";
+      btn.style.position = "fixed"; btn.style.bottom = "20px"; btn.style.right = "16px"; btn.style.zIndex = "1000";
+      btn.onclick = async () => {
+        if (deferredPrompt) { deferredPrompt.prompt(); const res = await deferredPrompt.userChoice; deferredPrompt = null; btn.remove(); }
+      };
+      document.body.appendChild(btn);
+    });
+
+    // ---------- init ----------
+    loadData();
+  </script>
+</body>
+</html>
