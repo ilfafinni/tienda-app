@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   SafeAreaView,
   View,
@@ -12,12 +12,17 @@ import {
   ActivityIndicator,
   TextInput,
   Modal,
-  TouchableWithoutFeedback,
   Keyboard,
 } from "react-native";
 import { Svg, Rect, Text as SvgText, Circle } from "react-native-svg";
 
-import { API_URL } from "../config";
+import {
+  getZones,
+  getProducts,
+  createZone,
+  updateZone,
+  deleteZone,
+} from "../api";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const MAP_VIEWBOX = "0 0 1000 1000";
@@ -34,8 +39,7 @@ export default function MapScreen({ navigation }) {
   const [zones, setZones] = useState([]);
   const [products, setProducts] = useState([]);
   const [selectedZone, setSelectedZone] = useState(null);
-  const [editing, setEditing] = useState(false); // modo edición de muebles
-  const [draggingZone, setDraggingZone] = useState(null); // {id, startX, startY, curX, curY}
+  const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -56,24 +60,28 @@ export default function MapScreen({ navigation }) {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [zRes, pRes] = await Promise.all([
-        fetch(`${API_URL}/api/zones`),
-        fetch(`${API_URL}/api/products`),
-      ]);
-      const zData = await zRes.json();
-      const pData = await pRes.json();
-      setZones(zData);
-      setProducts(pData);
       setError(null);
+
+      const [zRes, pRes] = await Promise.all([getZones(), getProducts()]);
+
+      if (!zRes.ok || !pRes.ok) {
+        throw new Error(zRes.error || pRes.error || "Error cargando datos");
+      }
+
+      setZones(zRes.data);
+      setProducts(pRes.data);
     } catch (err) {
-      setError("No se pudo conectar con el servidor. ¿Está corriendo?");
+      setError(
+        err.message || "No se pudo conectar con el servidor. ¿Está en línea?"
+      );
       console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
-  const productsInZone = (zoneId) => products.filter((p) => p.zone_id === zoneId);
+  const productsInZone = (zoneId) =>
+    products.filter((p) => p.zone_id === zoneId);
 
   const zoneColor = (type) => {
     const map = {
@@ -86,41 +94,12 @@ export default function MapScreen({ navigation }) {
     return map[type] || "#94a3b8";
   };
 
-  // --- Manejo de arrastre ---
-  const handleZonePressIn = (e, zone) => {
-    if (!editing) return;
-    e.nativeEvent && e.nativeEvent.preventDefault ? e.nativeEvent.preventDefault() : null;
-    setDraggingZone({ id: zone.id, startX: zone.x, startY: zone.y, curX: zone.x, curY: zone.y });
-  };
-
-  const handleZoneMove = (e, zone) => {
-    if (!editing || !draggingZone || draggingZone.id !== zone.id) return;
-    // e.nativeEvent no tiene pageX en React Native TouchableOpacity, usamos gestos simplificados
-    // Para mover, el usuario usará los botones de desplazamiento o edición directa
-  };
-
-  const handleZoneRelease = () => {
-    if (!draggingZone) return;
-    setZones(prev =>
-      prev.map(z =>
-        z.id === draggingZone.id
-          ? { ...z, x: draggingZone.curX, y: draggingZone.curY }
-          : z
-      )
-    );
-    setDraggingZone(null);
-  };
-
-  // --- CRUD Zonas ---
   const addZone = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/zones`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newZone),
-      });
-      const created = await res.json();
-      setZones([...zones, created]);
+      const res = await createZone(newZone);
+      if (!res.ok) throw new Error(res.error || "Error creando mueble");
+
+      setZones([...zones, res.data]);
       setShowAddModal(false);
       setNewZone({
         name: "",
@@ -132,64 +111,50 @@ export default function MapScreen({ navigation }) {
         color: "#3b82f6",
       });
     } catch (err) {
-      Alert.alert("Error", "No se pudo crear el mueble");
+      Alert.alert("Error", err.message || "No se pudo crear el mueble");
     }
   };
 
-  const updateZone = async (zone, updates) => {
+  const updateZoneData = async (zone, updates) => {
     try {
-      const res = await fetch(`${API_URL}/api/zones/${zone.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...zone, ...updates }),
-      });
-      const updated = await res.json();
-      setZones(prev => prev.map(z => (z.id === zone.id ? updated : z)));
-      if (selectedZone?.id === zone.id) setSelectedZone(updated);
+      const res = await updateZone(zone.id, updates);
+      if (!res.ok) throw new Error(res.error || "Error actualizando mueble");
+
+      setZones((prev) =>
+        prev.map((z) => (z.id === zone.id ? res.data : z))
+      );
+      if (selectedZone?.id === zone.id) setSelectedZone(res.data);
     } catch (err) {
-      Alert.alert("Error", "No se pudo actualizar el mueble");
+      Alert.alert("Error", err.message || "No se pudo actualizar el mueble");
     }
   };
 
-  const deleteZone = async (zone) => {
-    if (!editing) return;
+  const deleteZoneData = async (zone) => {
     const confirm = await Alert.alert(
       "Eliminar mueble",
       `¿Eliminar "${zone.name}"? Los productos de esta zona se desasignarán.`,
       [
         { text: "Cancelar", style: "cancel" },
-        { text: "Eliminar", style: "destructive", onPress: async () => {
-          try {
-            await fetch(`${API_URL}/api/zones/${zone.id}`, { method: "DELETE" });
-            setZones(prev => prev.filter(z => z.id !== zone.id));
-            if (selectedZone?.id === zone.id) setSelectedZone(null);
-          } catch (err) {
-            Alert.alert("Error", "No se pudo eliminar");
-          }
-        } },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const res = await deleteZone(zone.id);
+              if (!res.ok) throw new Error(res.error || "Error eliminando");
+
+              setZones((prev) => prev.filter((z) => z.id !== zone.id));
+              if (selectedZone?.id === zone.id) setSelectedZone(null);
+            } catch (err) {
+              Alert.alert("Error", err.message || "No se pudo eliminar");
+            }
+          },
+        },
       ]
     );
   };
 
   const toggleEditing = () => setEditing(!editing);
-
-  // Asignar producto seleccionado a zona (desde detalle de producto)
-  const assignProductToZone = async (productCode, zoneId) => {
-    try {
-      await fetch(`${API_URL}/api/products/${productCode}/zone`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ zone_id: zoneId }),
-      });
-      // recargar productos
-      const pRes = await fetch(`${API_URL}/api/products`);
-      const pData = await pRes.json();
-      setProducts(pData);
-      Alert.alert("Éxito", "Producto asignado a esta zona");
-    } catch (err) {
-      Alert.alert("Error", "No se pudo asignar el producto");
-    }
-  };
 
   if (loading) {
     return (
@@ -223,7 +188,6 @@ export default function MapScreen({ navigation }) {
     <SafeAreaView style={styles.container} edges={["bottom"]}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Top bar */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Text style={styles.backText}>← Volver</Text>
@@ -240,27 +204,16 @@ export default function MapScreen({ navigation }) {
         )}
       </View>
 
-      {/* Mapa SVG */}
       <View style={styles.mapContainer}>
         <Svg width="100%" height="100%" viewBox={MAP_VIEWBOX} style={styles.svg}>
           {zones.map((zone) => {
             const isSelected = selectedZone?.id === zone.id;
-            const isDragging = draggingZone?.id === zone.id;
             const zoneProds = productsInZone(zone.id);
             return (
               <TouchableOpacity
                 key={zone.id}
-                onPress={() => {
-                  if (editing) {
-                    setSelectedZone(zone);
-                  } else {
-                    setSelectedZone(zone);
-                  }
-                }}
-                onPressIn={e => handleZonePressIn(e, zone)}
-                onPressOut={handleZoneRelease}
+                onPress={() => setSelectedZone(zone)}
                 hitSlop={15}
-                style={styles.touchZone}
               >
                 <Rect
                   x={zone.x}
@@ -321,7 +274,6 @@ export default function MapScreen({ navigation }) {
           })}
         </Svg>
 
-        {/* Leyenda de tipos */}
         <View style={styles.legend}>
           {Object.entries(TYPE_LABELS).map(([type, label]) => (
             <View key={type} style={styles.legendItem}>
@@ -331,7 +283,6 @@ export default function MapScreen({ navigation }) {
           ))}
         </View>
 
-        {/* Botón agregar mueble (solo en modo edición) */}
         {editing && (
           <TouchableOpacity
             style={styles.addButton}
@@ -353,7 +304,6 @@ export default function MapScreen({ navigation }) {
         )}
       </View>
 
-      {/* Panel inferior: productos de la zona seleccionada */}
       {selectedZone && (
         <View style={styles.bottomPanel}>
           <TouchableOpacity style={styles.closeButton} onPress={() => setSelectedZone(null)}>
@@ -378,10 +328,6 @@ export default function MapScreen({ navigation }) {
                 <TouchableOpacity
                   key={p.id}
                   style={styles.productRow}
-                  onPress={() => {
-                    // mostrar opciones de producto
-                    Keyboard.dismiss();
-                  }}
                 >
                   <View style={styles.productInfo}>
                     <Text style={styles.productCode}>{p.code}</Text>
@@ -396,29 +342,10 @@ export default function MapScreen({ navigation }) {
                 </TouchableOpacity>
               ))
             )}
-
-            {editing && selectedZone && (
-              <View style={styles.assignSection}>
-                <Text style={styles.assignTitle}>Asignar producto a este mueble</Text>
-                <TextInput
-                  style={styles.assignInput}
-                  placeholder="Código del producto (ej: PNT-001)"
-                  autoCapitalize="characters"
-                  placeholderTextColor="#94a3b8"
-                />
-                <TouchableOpacity style={styles.assignButton} onPress={() => {
-                  // Se buscará el código en el input; para simplicidad usamos un estado temporal
-                  Alert.alert("Próximamente", "Usa la pantalla Buscar para asignar productos.");
-                }}>
-                  <Text style={styles.assignButtonText}>Asignar desde búsqueda</Text>
-                </TouchableOpacity>
-              </View>
-            )}
           </ScrollView>
         </View>
       )}
 
-      {/* Modal agregar mueble */}
       <Modal visible={showAddModal} transparent={true} onRequestClose={() => setShowAddModal(false)}>
         <View style={styles.modalBackdrop} onTouchEnd={() => setShowAddModal(false)}>
           <View style={styles.modalContent}>
@@ -428,7 +355,7 @@ export default function MapScreen({ navigation }) {
               <TextInput
                 style={styles.modalInput}
                 value={newZone.name}
-                onChangeText={t => setNewZone({ ...newZone, name: t })}
+                onChangeText={(t) => setNewZone({ ...newZone, name: t })}
                 placeholder="Ej: Floorstand B"
               />
               <Text style={styles.modalLabel}>Tipo</Text>
@@ -470,7 +397,7 @@ export default function MapScreen({ navigation }) {
                   <TextInput
                     style={styles.modalInputSmall}
                     value={String(newZone.x)}
-                    onChangeText={t => setNewZone({ ...newZone, x: parseInt(t) || 0 })}
+                    onChangeText={(t) => setNewZone({ ...newZone, x: parseInt(t) || 0 })}
                     keyboardType="numeric"
                   />
                 </View>
@@ -479,7 +406,7 @@ export default function MapScreen({ navigation }) {
                   <TextInput
                     style={styles.modalInputSmall}
                     value={String(newZone.y)}
-                    onChangeText={t => setNewZone({ ...newZone, y: parseInt(t) || 0 })}
+                    onChangeText={(t) => setNewZone({ ...newZone, y: parseInt(t) || 0 })}
                     keyboardType="numeric"
                   />
                 </View>
@@ -488,7 +415,7 @@ export default function MapScreen({ navigation }) {
                   <TextInput
                     style={styles.modalInputSmall}
                     value={String(newZone.w)}
-                    onChangeText={t => setNewZone({ ...newZone, w: parseInt(t) || 50 })}
+                    onChangeText={(t) => setNewZone({ ...newZone, w: parseInt(t) || 50 })}
                     keyboardType="numeric"
                   />
                 </View>
@@ -497,7 +424,7 @@ export default function MapScreen({ navigation }) {
                   <TextInput
                     style={styles.modalInputSmall}
                     value={String(newZone.h)}
-                    onChangeText={t => setNewZone({ ...newZone, h: parseInt(t) || 50 })}
+                    onChangeText={(t) => setNewZone({ ...newZone, h: parseInt(t) || 50 })}
                     keyboardType="numeric"
                   />
                 </View>
@@ -515,10 +442,9 @@ export default function MapScreen({ navigation }) {
         </View>
       </Modal>
 
-      {/* Indicador de modo edición */}
       {editing && (
         <View style={styles.editingBadge}>
-          <Text style={styles.editingText}>Modo edición: arrastra y configura los muebles</Text>
+          <Text style={styles.editingText}>Modo edición: configura los muebles</Text>
         </View>
       )}
     </SafeAreaView>
@@ -625,9 +551,6 @@ const styles = StyleSheet.create({
   svg: {
     flex: 1,
     backgroundColor: "#f8fafc",
-  },
-  touchZone: {
-    // Para hitSlop
   },
   legend: {
     flexDirection: "row",
@@ -752,37 +675,6 @@ const styles = StyleSheet.create({
     color: "#10b981",
     marginLeft: 12,
   },
-  assignSection: {
-    marginTop: 16,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#f1f5f9",
-  },
-  assignTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#334155",
-    marginBottom: 8,
-  },
-  assignInput: {
-    backgroundColor: "#f1f5f9",
-    padding: 10,
-    borderRadius: 8,
-    fontSize: 14,
-    color: "#1e293b",
-    marginBottom: 8,
-  },
-  assignButton: {
-    backgroundColor: "#3b82f6",
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  assignButtonText: {
-    color: "#ffffff",
-    fontWeight: "bold",
-    fontSize: 14,
-  },
   editingBadge: {
     position: "absolute",
     top: 10,
@@ -798,7 +690,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 13,
   },
-  // Modal
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",

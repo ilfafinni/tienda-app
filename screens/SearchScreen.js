@@ -10,9 +10,10 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Keyboard,
 } from "react-native";
 
-import { API_URL } from "../config";
+import { searchProducts } from "../api";
 
 export default function SearchScreen({ navigation }) {
   const [query, setQuery] = useState("");
@@ -20,7 +21,7 @@ export default function SearchScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const searchProducts = async () => {
+  const searchProductsFn = async () => {
     if (!query.trim()) {
       setResults([]);
       return;
@@ -28,11 +29,13 @@ export default function SearchScreen({ navigation }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/api/products/search?q=${encodeURIComponent(query)}`);
-      const data = await res.json();
-      setResults(data);
+      const res = await searchProducts(query);
+      if (!res.ok) {
+        throw new Error(res.error || "Error buscando productos");
+      }
+      setResults(res.data);
     } catch (err) {
-      setError("No se pudo conectar con el servidor.");
+      setError(err.message || "No se pudo conectar con el servidor.");
       console.error(err);
     } finally {
       setLoading(false);
@@ -40,8 +43,7 @@ export default function SearchScreen({ navigation }) {
   };
 
   useEffect(() => {
-    // buscar al cambiar (con un pequeño delay podría mejorarse, pero para demo está bien)
-    const t = setTimeout(searchProducts, 300);
+    const t = setTimeout(searchProductsFn, 300);
     return () => clearTimeout(t);
   }, [query]);
 
@@ -65,7 +67,7 @@ export default function SearchScreen({ navigation }) {
           autoCapitalize="characters"
           clearButtonMode="while-editing"
           returnKeyType="search"
-          onSubmitEditing={searchProducts}
+          onSubmitEditing={searchProductsFn}
         />
         <TouchableOpacity style={styles.clearButton} onPress={() => setQuery("")}>
           <Text style={styles.clearText}>✕</Text>
@@ -122,8 +124,6 @@ export default function SearchScreen({ navigation }) {
       return;
     }
     navigation.navigate("Map");
-    // Nota: Expo Router / stack no permite pasar estado fácilmente aquí sin params.
-    // Se puede ampliar pasando { zoneId: p.zone_id } como param.
   }
 }
 

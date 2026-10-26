@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   SafeAreaView,
   View,
@@ -10,13 +10,14 @@ import {
   Platform,
   ActivityIndicator,
 } from "react-native";
-import { Camera } from "expo-camera";
 import { BarCodeScanner } from "expo-barcode-scanner";
 
-import { API_URL } from "../config";
+import {
+  getProductByCode,
+  registerScan,
+} from "../api";
 
 export default function ScannerScreen({ navigation }) {
-  const [permission, requestPermission] = Camera.useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [scanning, setScanning] = useState(true);
   const [error, setError] = useState(null);
@@ -24,19 +25,10 @@ export default function ScannerScreen({ navigation }) {
   const [loadingResult, setLoadingResult] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      if (Platform.OS === "web") {
-        setError("La cámara no está disponible en web.");
-        return;
-      }
-      if (!permission) {
-        const res = await requestPermission();
-        if (!res.granted) {
-          setError("Se necesita permiso de la cámara para escanear.");
-        }
-      }
-    })();
-  }, [permission, requestPermission]);
+    if (Platform.OS === "web") {
+      setError("La cámara no está disponible en web.");
+    }
+  }, []);
 
   const handleBarCodeScanned = async ({ data }) => {
     setScanning(false);
@@ -46,24 +38,17 @@ export default function ScannerScreen({ navigation }) {
 
     try {
       // Buscar el producto por código en el servidor
-      const res = await fetch(`${API_URL}/api/products/${data}`);
+      const res = await getProductByCode(data);
       if (!res.ok) {
         setError(`Producto "${data}" no encontrado en el sistema.`);
         setLoadingResult(false);
         return;
       }
-      const product = await res.json();
+      const product = res.data;
       setProductResult(product);
 
       // Registrar el escaneo en el servidor
-      await fetch(`${API_URL}/api/scans`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          product_code: data,
-          device: Platform.OS,
-        }),
-      });
+      await registerScan(data, Platform.OS);
     } catch (err) {
       setError("Error al consultar el servidor.");
       console.error(err);
@@ -82,7 +67,6 @@ export default function ScannerScreen({ navigation }) {
   const goToMap = () => {
     if (productResult?.zone_id != null) {
       navigation.navigate("Map");
-      // Nota: para resaltar la zona en el mapa se podría pasar un parámetro.
     } else {
       Alert.alert("Sin ubicación", "Este producto no tiene zona asignada en el mapa.");
     }
@@ -149,15 +133,13 @@ export default function ScannerScreen({ navigation }) {
     );
   }
 
-  if (!permission || !scanning) {
+  if (!scanning) {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#3b82f6" />
-          <Text style={styles.loadingText}>
-            {!permission ? "Solicitando permiso de cámara..." : "Preparando escáner..."}
-          </Text>
+          <Text style={styles.loadingText}>Preparando escáner...</Text>
         </View>
       </SafeAreaView>
     );
