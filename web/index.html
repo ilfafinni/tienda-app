@@ -11,86 +11,97 @@
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #f8fafc; color: #1e293b; }
+    html, body { height: 100%; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #f8fafc; color: #1e293b; -webkit-tap-highlight-color: transparent; }
     #app { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-    header { background: #3b82f6; color: #fff; padding: 12px 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); z-index: 100; }
-    header h1 { font-size: 18px; font-weight: 700; }
-    .back { border: none; background: rgba(255,255,255,0.2); color: #fff; border-radius: 8px; padding: 6px 12px; font-size: 16px; cursor: pointer; display: none; }
-    .edit-toggle { margin-left: auto; font-size: 13px; padding: 6px 12px; border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; background: rgba(255,255,255,0.15); color: #fff; cursor: pointer; }
+    header { background: #3b82f6; color: #fff; padding: 12px 14px; display: flex; align-items: center; gap: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); z-index: 100; }
+    header h1 { font-size: 17px; font-weight: 700; flex: 1; }
+    .back { border: none; background: rgba(255,255,255,0.2); color: #fff; border-radius: 8px; padding: 6px 10px; font-size: 16px; cursor: pointer; display: none; }
+    .edit-toggle { font-size: 12px; padding: 5px 10px; border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; background: rgba(255,255,255,0.15); color: #fff; cursor: pointer; white-space: nowrap; }
     .edit-toggle.active { background: #f59e0b; border-color: #f59e0b; }
-    main { flex: 1; overflow-y: auto; padding: 16px; position: relative; }
+    main { flex: 1; overflow-y: auto; padding: 14px; position: relative; }
     section.screen { display: none; }
     section.screen.active { display: block; }
-    .title { font-size: 24px; font-weight: 800; margin-bottom: 6px; letter-spacing: -0.5px; }
-    .subtitle { color: #64748b; font-size: 14px; margin-bottom: 18px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .card { background: #fff; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; align-items: center; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); cursor: pointer; transition: transform .1s; border: 1px solid #f1f5f9; }
-    .card:active { transform: scale(0.97); }
-    .card .icon { font-size: 38px; margin-bottom: 8px; }
-    .card .t { font-weight: 700; font-size: 15px; margin-bottom: 3px; }
-    .card .d { font-size: 12px; color: #64748b; }
+    .title { font-size: 22px; font-weight: 800; margin-bottom: 4px; letter-spacing: -0.5px; }
+    .subtitle { color: #64748b; font-size: 13px; margin-bottom: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .card { background: #fff; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; align-items: center; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); cursor: pointer; transition: transform .1s; border: 1px solid #f1f5f9; }
+    .card:active { transform: scale(0.97); background: #f8fafc; }
+    .card .icon { font-size: 36px; margin-bottom: 7px; }
+    .card .t { font-weight: 700; font-size: 14px; margin-bottom: 2px; }
+    .card .d { font-size: 11px; color: #64748b; }
     /* search */
-    .search-box { position: relative; margin-bottom: 16px; }
+    .search-box { position: relative; margin-bottom: 14px; }
     .search-box input { width: 100%; padding: 12px 16px 12px 44px; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 15px; outline: none; background: #fff; }
     .search-box input:focus { border-color: #3b82f6; }
     .search-box .ico { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 18px; color: #94a3b8; }
     .prod-list { display: flex; flex-direction: column; gap: 8px; }
-    .prod { background: #fff; border-radius: 12px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 4px rgba(0,0,0,0.05); cursor: pointer; border: 1px solid #f1f5f9; }
+    .prod { background: #fff; border-radius: 12px; padding: 11px 13px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 4px rgba(0,0,0,0.05); cursor: pointer; border: 1px solid #f1f5f9; }
     .prod:active { background: #f8fafc; }
     .prod .info .code { font-weight: 800; font-size: 13px; color: #3b82f6; }
     .prod .info .name { font-weight: 700; font-size: 14px; margin-top: 1px; }
     .prod .info .meta { font-size: 11px; color: #64748b; margin-top: 1px; }
     .prod .info .zone { font-size: 11px; color: #10b981; font-weight: 700; margin-top: 2px; }
+    .prod .zone-none { font-size: 11px; color: #ef4444; font-weight: 700; margin-top: 2px; }
     .prod .price { font-weight: 800; font-size: 15px; }
-    .empty { text-align: center; color: #64748b; margin-top: 50px; }
-    .loading { text-align: center; color: #64748b; margin-top: 50px; }
+    .prod-actions { display: flex; gap: 6px; }
+    .empty { text-align: center; color: #64748b; margin-top: 60px; }
+    .loading { text-align: center; color: #64748b; margin-top: 60px; }
+    .sync-badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: #e2e8f0; color: #475569; margin-left: 6px; border: 1px solid #cbd5e1; }
+    .sync-badge.online { background: #dcfce7; color: #166534; border-color: #86efac; }
+    .sync-badge.offline { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
     /* map */
-    .map-toolbar { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
-    .map-wrap { border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; background: #fff; height: 55vh; position: relative; touch-action: none; }
-    svg#map { width: 100%; height: 100%; display: block; cursor: grab; background: #fbfcfd; }
+    .map-toolbar { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
+    .map-wrap { position: relative; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; background: #fbfcfd; height: 52vh; touch-action: none; }
+    svg#map { width: 100%; height: 100%; display: block; cursor: grab; }
     svg#map:active { cursor: grabbing; }
     .zone { stroke: #fff; stroke-width: 3; cursor: pointer; transition: filter .2s, stroke .2s; }
-    .zone.selected { stroke: #f59e0b; stroke-width: 4; filter: drop-shadow(0 0 6px rgba(245,158,11,0.6)); }
+    .zone.selected { stroke: #f59e0b; stroke-width: 4; filter: drop-shadow(0 0 8px rgba(245,158,11,0.7)); }
+    .zone.dragging { opacity: 0.8; }
     .zone-label { font-size: 10px; fill: #fff; font-weight: 800; pointer-events: none; text-anchor: middle; dominant-baseline: middle; }
     .zone-products { font-size: 9px; fill: #ffe4e4; font-weight: 700; pointer-events: none; text-anchor: middle; dominant-baseline: middle; }
-    .map-controls { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-    .btn { border: none; background: #3b82f6; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; }
+    .map-controls { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .btn { border: none; background: #3b82f6; color: #fff; padding: 9px 14px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; }
     .btn:active { background: #2563eb; }
     .btn.secondary { background: #f1f5f9; color: #475569; }
-    .btn.small { padding: 8px 12px; font-size: 13px; }
+    .btn.small { padding: 7px 11px; font-size: 12px; }
     .btn:disabled { opacity: .5; cursor: not-allowed; }
     .btn.success { background: #10b981; }
     .btn.success:active { background: #059669; }
     .btn.danger { background: #ef4444; }
     .btn.danger:active { background: #dc2626; }
     /* scanner */
-    .scan-box { background: #fff; border-radius: 14px; padding: 16px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-    .scan-box .big { font-size: 44px; margin-bottom: 10px; }
-    .scan-box input { width: 85%; max-width: 320px; padding: 12px; border: 1px solid #e2e8f0; border-radius 10px; font-size: 16px; text-align: center; margin-bottom: 10px; }
-    .camera-box { border: 2px dashed #cbd5e1; border-radius: 12px; background: #000; margin: 10px 0; display: none; }
-    .camera-controls { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
-    .result-card { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 16px; margin-top: 16px; text-align: left; }
+    .scan-box { background: #fff; border-radius: 14px; padding: 14px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .scan-box .big { font-size: 42px; margin-bottom: 9px; }
+    .scan-box input { width: 85%; max-width: 320px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 16px; text-align: center; margin-bottom: 9px; }
+    .camera-box { border: 2px dashed #cbd5e1; border-radius: 12px; background: #000; margin: 9px 0; display: none; }
+    .camera-controls { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin-top: 7px; }
+    .result-card { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 14px; margin-top: 14px; text-align: left; }
     .result-card.none { background: #fef2f2; border-color: #fecaca; }
-    .result-card .t { font-weight: 800; font-size: 17px; margin-bottom: 8px; }
+    .result-card .t { font-weight: 800; font-size: 16px; margin-bottom: 7px; }
     .result-card .m { font-size: 13px; color: #475569; margin: 3px 0; }
     .result-card .zone { color: #3b82f6; font-weight: 700; }
-    .error { color: #dc2626; font-size: 13px; margin-top: 8px; }
-    .footer { padding: 12px 16px; color: #94a3b8; font-size: 12px; text-align: center; border-top: 1px solid #e2e8f0; }
+    .error { color: #dc2626; font-size: 13px; margin-top: 7px; }
+    .footer { padding: 10px 14px; color: #94a3b8; font-size: 11px; text-align: center; border-top: 1px solid #e2e8f0; }
     /* modals */
-    .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); display: none; align-items: center; justify-content: center; z-index: 200; backdrop-filter: blur(2px); }
-    .modal { background: #fff; border-radius: 16px; width: 92%; max-width: 420px; max-height: 85vh; overflow-y: auto; padding: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.25); }
-    .modal h2 { font-size: 18px; margin-bottom: 16px; }
-    .form-group { margin-bottom: 14px; }
-    .form-group label { display: block; font-size: 13px; font-weight: 700; color: #374151; margin-bottom: 6px; }
-    .form-group input, .form-group select { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 10px; font-size: 14px; background: #fff; }
+    .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.5); display: none; align-items: center; justify-content: center; z-index: 300; backdrop-filter: blur(3px); }
+    .modal { background: #fff; border-radius: 16px; width: 93%; max-width: 430px; max-height: 90vh; overflow-y: auto; padding: 18px; box-shadow: 0 12px 48px rgba(0,0,0,0.3); }
+    .modal h2 { font-size: 17px; margin-bottom: 14px; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 12px; font-weight: 700; color: #374151; margin-bottom: 5px; }
+    .form-group input, .form-group select { width: 100%; padding: 9px 11px; border: 1px solid #d1d5db; border-radius: 10px; font-size: 14px; background: #fff; }
     .form-group input:focus, .form-group select:focus { border-color: #3b82f6; outline: none; }
-    .modal-actions { display: flex; gap: 10px; margin-top: 18px; justify-content: flex-end; }
-    .zone-list { max-height: 200px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px; margin-bottom: 14px; }
-    .zone-item { padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; margin-bottom: 6px; border: 1px solid transparent; }
+    .modal-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+    .zone-list { max-height: 180px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 10px; padding: 7px; margin-bottom: 12px; }
+    .zone-item { padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; margin-bottom: 5px; border: 1px solid transparent; }
     .zone-item:hover { background: #f1f5f9; }
     .zone-item.selected { background: #dbeafe; border-color: #3b82f6; color: #1e40af; font-weight: 700; }
-    .hint { font-size: 12px; color: #64748b; margin-top: 6px; }
-    @media (max-width: 480px) { .grid { grid-template-columns: 1fr; } .map-wrap { height: 45vh; } }
+    .hint { font-size: 11px; color: #64748b; margin-top: 5px; }
+    .btn-full { width: 100%; }
+    /* zoom controls on map */
+    .zoom-controls { position: absolute; bottom: 10px; right: 10px; display: flex; flex-direction: column; gap: 6px; z-index: 50; }
+    .zoom-btn { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
+    .zoom-btn:active { background: #f1f5f9; }
+    @media (max-width: 480px) { .grid { grid-template-columns: 1fr; } .map-wrap { height: 42vh; } }
   </style>
 </head>
 <body>
@@ -98,6 +109,7 @@
     <header>
       <button class="back" id="btnBack" onclick="goBack()">←</button>
       <h1 id="hTitle">Mi Tienda</h1>
+      <span id="syncBadge" class="sync-badge offline">Sin sincronizar</span>
       <button class="edit-toggle" id="btnEditMap" onclick="toggleEditMode()">Editar mapa</button>
     </header>
     <main>
@@ -127,14 +139,18 @@
       <!-- Map -->
       <section class="screen" id="screenMap">
         <div class="title">🗺️ Mapa de la tienda</div>
-        <div class="subtitle">Arrastra los muebles y asigna productos</div>
+        <div class="subtitle">Arrastra muebles, asigna productos a zonas</div>
         <div class="map-toolbar">
-          <button class="btn small btn-success" onclick="addZone()">+ Agregar mueble</button>
+          <button class="btn small btn-success" onclick="addZone()">+ Mueble</button>
           <button class="btn small btn-secondary" onclick="centerMap()">Centrar</button>
-          <span id="editInfo" style="font-size:12px;color:#64748b;display:none;">Modo edición: arrastra los recuadros</span>
+          <span id="editInfo" style="font-size:11px;color:#64748b;display:none;">Modo edición: arrastra los recuadros</span>
         </div>
         <div class="map-wrap" id="mapWrap">
           <svg id="map" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet"></svg>
+          <div class="zoom-controls">
+            <div class="zoom-btn" onclick="zoomMap(1.2)">+</div>
+            <div class="zoom-btn" onclick="zoomMap(0.8)">−</div>
+          </div>
         </div>
         <div id="mapEmpty" style="display:none; text-align:center; color:#64748b; margin-top:30px;">No hay zonas. Agrega un mueble para empezar.</div>
         <div class="map-controls">
@@ -181,7 +197,8 @@
   <div class="modal" id="modalProduct">
     <h2 id="modalProductTitle">Producto</h2>
     <form id="formProduct" onsubmit="saveProduct(event)">
-      <input type="hidden" id="prodId">
+      <input type="hidden" id="prodIsNew">
+      <input type="hidden" id="prodIdHidden">
       <div class="form-group">
         <label>Código</label>
         <input type="text" id="prodCode" placeholder="Ej: PNT-001" required>
@@ -221,10 +238,11 @@
       <div class="form-group">
         <label>Zona en el mapa</label>
         <div class="zone-list" id="prodZoneList"></div>
+        <div class="hint">Toca una zona para asignar el producto</div>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn secondary" onclick="closeProductModal()">Cancelar</button>
-        <button type="submit" class="btn success">Guardar producto</button>
+        <button type="submit" class="btn success btn-full">Guardar producto</button>
       </div>
     </form>
   </div>
@@ -259,41 +277,123 @@
       </div>
       <div class="modal-actions">
         <button type="button" class="btn secondary" onclick="closeZoneModal()">Cancelar</button>
-        <button type="submit" class="btn success">Guardar mueble</button>
+        <button type="submit" class="btn success btn-full">Guardar mueble</button>
       </div>
     </form>
   </div>
 
   <script>
+    // ================= CONFIG =================
     const API = "https://tienda-server-six.vercel.app";
+    const LS_ZONES = "tienda_zones";
+    const LS_PRODUCTS = "tienda_products";
     let zones = [], products = [];
     let editingMap = false;
     let draggingZone = null;
-    let mapOffset = { x: 0, y: 0 };
-    let mapScale = 1;
     let selectedZoneId = null;
+    let online = false;
+    let mapScale = 1;
+    let mapTx = 0, mapTy = 0;
 
-    async function api(path, opts) {
+    // ================= STORAGE =================
+    function loadLocal() {
+      try { zones = JSON.parse(localStorage.getItem(LS_ZONES) || "[]"); } catch(e) { zones = []; }
+      try { products = JSON.parse(localStorage.getItem(LS_PRODUCTS) || "[]"); } catch(e) { products = []; }
+      if (!zones.length) zones = seedZones();
+      if (!products.length) products = seedProducts();
+      saveLocal();
+    }
+
+    function saveLocal() {
+      localStorage.setItem(LS_ZONES, JSON.stringify(zones));
+      localStorage.setItem(LS_PRODUCTS, JSON.stringify(products));
+    }
+
+    function seedZones() {
+      return [
+        { id: 1, name: "Entrada", type: "entrada", x: 0, y: 0, w: 100, h: 60, color: "#e5e7eb", floor: 1 },
+        { id: 2, name: "Floorstand A", type: "floorstand", x: 120, y: 80, w: 140, h: 120, color: "#3b82f6", floor: 1 },
+        { id: 3, name: "Mesa Centro", type: "mesa", x: 300, y: 100, w: 160, h: 100, color: "#10b981", floor: 1 },
+        { id: 4, name: "Pared Norte", type: "pared", x: 100, y: 0, w: 500, h: 60, color: "#6366f1", floor: 1 },
+        { id: 5, name: "Pared Sur", type: "pared", x: 100, y: 540, w: 500, h: 60, color: "#6366f1", floor: 1 },
+        { id: 6, name: "Estante Poleras", type: "estante", x: 320, y: 260, w: 120, h: 140, color: "#8b5cf6", floor: 1 },
+        { id: 7, name: "Estante Pantalones", type: "estante", x: 80, y: 260, w: 120, h: 140, color: "#ef4444", floor: 1 },
+      ];
+    }
+
+    function seedProducts() {
+      return [
+        { id: 1, code: "PNT-001", name: "Pantalón jean azul", category: "pantalon", size: "M", color: "azul", price: 12990, zone_id: 7, shelf_position: "fila 1" },
+        { id: 2, code: "PNT-002", name: "Pantalón jean negro", category: "pantalon", size: "L", color: "negro", price: 13990, zone_id: 7, shelf_position: "fila 2" },
+        { id: 3, code: "PNT-003", name: "Pantalón chino caqui", category: "pantalon", size: "M", color: "caqui", price: 10990, zone_id: 7, shelf_position: "fila 1" },
+        { id: 4, code: "POL-001", name: "Polera básica blanca", category: "polera", size: "M", color: "blanco", price: 5990, zone_id: 6, shelf_position: "columna A" },
+        { id: 5, code: "POL-002", name: "Polera básica negra", category: "polera", size: "L", color: "negro", price: 5990, zone_id: 6, shelf_position: "columna B" },
+        { id: 6, code: "POL-003", name: "Polera deportiva roja", category: "polera", size: "S", color: "roja", price: 7990, zone_id: 6, shelf_position: "columna A" },
+        { id: 7, code: "ZAP-001", name: "Zapato urbano gris", category: "zapato", size: "42", color: "gris", price: 18990, zone_id: 3, shelf_position: "cajón 1" },
+      ];
+    }
+
+    function nextId(arr) { return arr.length > 0 ? Math.max(...arr.map(x => x.id)) + 1 : 1; }
+
+    // ================= SERVER SYNC =================
+    async function fetchApi(path, opts) {
       const r = await fetch(`${API}${path}`, Object.assign({ headers: { "Content-Type": "application/json" } }, opts || {}));
-      if (!r.ok) throw new Error("Error " + r.status);
+      if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
     }
 
-    async function loadData() {
+    async function syncWithServer() {
+      const badge = document.getElementById("syncBadge");
       try {
-        zones = await api("/api/zones");
-        products = await api("/api/products");
-      } catch (e) { console.error(e); }
+        const [z, p] = await Promise.all([
+          fetchApi("/api/zones"),
+          fetchApi("/api/products")
+        ]);
+        zones = z.map(x => ({ ...x }));
+        products = p.map(x => ({ ...x }));
+        saveLocal();
+        online = true;
+        badge.textContent = "Sincronizado";
+        badge.className = "sync-badge online";
+        return true;
+      } catch (e) {
+        online = false;
+        badge.textContent = "Sin servidor (local)";
+        badge.className = "sync-badge offline";
+        console.warn("Usando datos locales:", e.message);
+        return false;
+      }
     }
 
+    async function pushZoneToServer(z) {
+      if (!online) return;
+      try {
+        await fetchApi(`/api/zones/${z.id}`, { method: "PUT", body: JSON.stringify(z) });
+      } catch(e) { /* silencioso */ }
+    }
+
+    async function pushProductToServer(prod) {
+      if (!online) return;
+      try {
+        await fetchApi(`/api/products/${prod.code}`, { method: "PUT", body: JSON.stringify(prod) });
+      } catch(e) {
+        // si no existe, crear
+        try {
+          await fetchApi("/api/products", { method: "POST", body: JSON.stringify(prod) });
+        } catch(e2) { /* silencioso */ }
+      }
+    }
+
+    // ================= NAVIGATION =================
     function show(screen) {
       document.querySelectorAll("section.screen").forEach(s => s.classList.remove("active"));
-      document.getElementById("screen" + screen.charAt(0).toUpperCase() + screen.slice(1)).classList.add("active");
+      const el = document.getElementById("screen" + screen.charAt(0).toUpperCase() + screen.slice(1));
+      if (el) el.classList.add("active");
       document.getElementById("btnBack").style.display = screen === "home" ? "none" : "inline-block";
       document.getElementById("btnEditMap").style.display = screen === "map" ? "inline-block" : "none";
       document.getElementById("hTitle").textContent =
         { home: "Mi Tienda", map: "Mapa de la tienda", search: "Buscar producto", scan: "Escanear producto" }[screen];
-      if (screen === "map") { renderMap(); }
+      if (screen === "map") renderMap();
       if (screen === "scan") { stopCamera(); document.getElementById("inpScan").value = ""; document.getElementById("cardResult").style.display = "none"; document.getElementById("scanError").textContent = ""; }
     }
 
@@ -309,7 +409,7 @@
       renderMap();
     }
 
-    // ---------- MAP ----------
+    // ================= MAP =================
     function renderMap() {
       const svg = document.getElementById("map");
       const empty = document.getElementById("mapEmpty");
@@ -326,13 +426,48 @@
             x="${z.x}" y="${z.y}" width="${z.w || 100}" height="${z.h || 80}" rx="12" ry="12"
             fill="${z.color || '#3b82f6'}" data-id="${z.id}"
             onclick="selectZone(${z.id})"
-            onmousedown="startDrag(event, ${z.id})"></rect>
-          <text class="zone-label" x="${cx}" y="${cy - 6}" data-id="${z.id}" onclick="selectZone(${z.id})">${z.name}</text>
+            onmousedown="startDrag(event, ${z.id})"
+            ontouchstart="startDragTouch(event, ${z.id})"></rect>
+          <text class="zone-label" x="${cx}" y="${cy - 7}" data-id="${z.id}" onclick="selectZone(${z.id})">${z.name}</text>
           ${prods.length > 0 ? `<text class="zone-products" x="${cx}" y="${cy + 10}" data-id="${z.id}" onclick="selectZone(${z.id})">${prods.length} productos</text>` : ""}
         `;
       });
       svg.innerHTML = html;
+      applyMapTransform();
     }
+
+    function applyMapTransform() {
+      const svg = document.getElementById("map");
+      svg.setAttribute("transform", `translate(${mapTx},${mapTy}) scale(${mapScale})`);
+    }
+
+    function centerMap() {
+      mapScale = 1; mapTx = 0; mapTy = 0;
+      applyMapTransform();
+    }
+
+    function zoomMap(factor) {
+      mapScale = Math.min(3, Math.max(0.5, mapScale * factor));
+      applyMapTransform();
+    }
+
+    // Pan del mapa (arrastrar fondo)
+    let panning = false;
+    let panStart = { x: 0, y: 0 };
+    const mapWrap = document.getElementById("mapWrap");
+    mapWrap.addEventListener("mousedown", e => {
+      if (e.target.tagName === "rect" || e.target.tagName === "text") return;
+      panning = true;
+      panStart = { x: e.clientX - mapTx, y: e.clientY - mapTy };
+      mapWrap.style.cursor = "grabbing";
+    });
+    window.addEventListener("mousemove", e => {
+      if (!panning) return;
+      mapTx = e.clientX - panStart.x;
+      mapTy = e.clientY - panStart.y;
+      applyMapTransform();
+    });
+    window.addEventListener("mouseup", () => { panning = false; mapWrap.style.cursor = "default"; });
 
     function selectZone(id) {
       if (!editingMap) return;
@@ -346,27 +481,34 @@
 
     function startDrag(e, id) {
       if (!editingMap) return;
-      e.preventDefault();
-      e.stopPropagation();
+      e.preventDefault(); e.stopPropagation();
       selectedZoneId = id;
       const z = zones.find(z => z.id === id);
-      const pt = svgPoint(svg, e.clientX, e.clientY);
-      draggingZone = { id, startX: z.x, startY: z.y, curX: pt.x, curY: pt.y };
+      draggingZone = { id, startX: z.x, startY: z.y, curX: z.x + (z.w||100)/2, curY: z.y + (z.h||80)/2 };
       renderMap();
       window.addEventListener("mousemove", onDragMove);
       window.addEventListener("mouseup", onDragEnd);
     }
 
-    function svgPoint(svg, x, y) {
-      const pt = svg.createSVGPoint();
-      pt.x = x; pt.y = y;
-      return pt.matrixTransform(svg.getScreenCTM().inverse());
+    function startDragTouch(e, id) {
+      if (!editingMap) return;
+      e.preventDefault();
+      selectedZoneId = id;
+      const z = zones.find(z => z.id === id);
+      const touch = e.touches[0];
+      draggingZone = { id, startX: z.x, startY: z.y, curX: z.x + (z.w||100)/2, curY: z.y + (z.h||80)/2 };
+      renderMap();
+      window.addEventListener("touchmove", onDragTouchMove, { passive: false });
+      window.addEventListener("touchend", onDragEndTouch);
     }
 
     function onDragMove(e) {
       if (!draggingZone) return;
       e.preventDefault();
-      const pt = svgPoint(svg, e.clientX, e.clientY);
+      const svg = document.getElementById("map");
+      const pt = svg.createSVGPoint();
+      pt.x = (e.clientX - mapTx) / mapScale;
+      pt.y = (e.clientY - mapTy) / mapScale;
       draggingZone.curX = pt.x; draggingZone.curY = pt.y;
       const z = zones.find(z => z.id === draggingZone.id);
       if (z) {
@@ -380,32 +522,59 @@
       if (!draggingZone) return;
       const z = zones.find(z => z.id === draggingZone.id);
       if (z) {
-        api(`/api/zones/${z.id}`, { method: "PUT", body: JSON.stringify({ x: Math.round(z.x), y: Math.round(z.y), w: z.w, h: z.h, color: z.color, type: z.type, name: z.name, floor: z.floor }) }).catch(() => {});
+        z.x = Math.round(z.x); z.y = Math.round(z.y);
+        saveLocal();
+        pushZoneToServer(z);
+        renderMap();
       }
       draggingZone = null;
       window.removeEventListener("mousemove", onDragMove);
       window.removeEventListener("mouseup", onDragEnd);
     }
 
-    function centerMap() {
+    function onDragTouchMove(e) {
+      if (!draggingZone) return;
+      e.preventDefault();
       const svg = document.getElementById("map");
-      svg.setAttribute("viewBox", "0 0 1000 1000");
+      const pt = svg.createSVGPoint();
+      pt.x = (e.touches[0].clientX - mapTx) / mapScale;
+      pt.y = (e.touches[0].clientY - mapTy) / mapScale;
+      draggingZone.curX = pt.x; draggingZone.curY = pt.y;
+      const z = zones.find(z => z.id === draggingZone.id);
+      if (z) {
+        z.x = draggingZone.curX - (z.w || 100) / 2;
+        z.y = draggingZone.curY - (z.h || 80) / 2;
+        renderMap();
+      }
+    }
+
+    function onDragEndTouch() {
+      if (!draggingZone) return;
+      const z = zones.find(z => z.id === draggingZone.id);
+      if (z) {
+        z.x = Math.round(z.x); z.y = Math.round(z.y);
+        saveLocal();
+        pushZoneToServer(z);
+        renderMap();
+      }
+      draggingZone = null;
+      window.removeEventListener("touchmove", onDragTouchMove);
+      window.removeEventListener("touchend", onDragEndTouch);
     }
 
     async function addZone() {
-      const name = prompt("Nombre del mueble (ej: Estante A):");
+      const name = prompt("Nombre del mueble:");
       if (!name) return;
       const type = prompt("Tipo (floorstand, mesa, estante, pared, entrada):", "estante");
       if (!type) return;
-      const color = prompt("Color hex (ej: #3b82f6):", "#3b82f6");
-      try {
-        const created = await api("/api/zones", {
-          method: "POST",
-          body: JSON.stringify({ name, type, x: 400, y: 400, w: 140, h: 120, color, floor: 1 })
-        });
-        zones.push(created);
-        renderMap();
-      } catch (err) { alert("Error creando mueble"); }
+      const color = prompt("Color hex:", "#3b82f6");
+      const z = {
+        id: nextId(zones), name, type, x: 400, y: 400, w: 140, h: 120, color: color || "#3b82f6", floor: 1
+      };
+      zones.push(z);
+      saveLocal();
+      pushZoneToServer(z);
+      renderMap();
     }
 
     function openZoneEditor(z) {
@@ -421,24 +590,29 @@
       e.preventDefault();
       const id = parseInt(document.getElementById("zoneId").value);
       const body = {
-        name: document.getElementById("zoneName").value,
+        id, name: document.getElementById("zoneName").value,
         type: document.getElementById("zoneType").value,
         color: document.getElementById("zoneColor").value,
         floor: parseInt(document.getElementById("zoneFloor").value) || 1,
       };
-      try {
-        const updated = await api(`/api/zones/${id}`, { method: "PUT", body: JSON.stringify(body) });
-        const idx = zones.findIndex(z => z.id === id);
-        if (idx !== -1) zones[idx] = updated;
-        renderMap();
-        closeZoneModal();
-      } catch (err) { alert("Error guardando mueble"); }
+      // encontrar y actualizar en zones
+      const idx = zones.findIndex(z => z.id === id);
+      if (idx !== -1) {
+        zones[idx] = { ...zones[idx], ...body };
+        // mantener x,y,w,h existentes
+        body.x = zones[idx].x; body.y = zones[idx].y; body.w = zones[idx].w; body.h = zones[idx].h;
+        zones[idx] = body;
+      }
+      saveLocal();
+      pushZoneToServer(body);
+      renderMap();
+      closeZoneModal();
     }
 
     function closeZoneModal() { document.getElementById("overlayZone").style.display = "none"; }
 
-    // ---------- SEARCH ----------
-    document.getElementById("inpSearch").addEventListener("input", debounce(renderSearch, 300));
+    // ================= SEARCH =================
+    document.getElementById("inpSearch").addEventListener("input", debounce(renderSearch, 250));
 
     function renderSearch() {
       const q = document.getElementById("inpSearch").value.toLowerCase();
@@ -458,9 +632,12 @@
             <div class="code">${p.code}</div>
             <div class="name">${p.name}</div>
             <div class="meta">${p.category} • ${p.size || "-"} • ${p.color || "-"}</div>
-            ${z ? `<div class="zone">📍 ${z.name} (${z.type})</div>` : `<div style="color:#ef4444;">Sin zona asignada</div>`}
+            ${z ? `<div class="zone">📍 ${z.name}</div>` : `<div class="zone-none">Sin zona</div>`}
           </div>
           <div class="price">${(p.price || 0).toLocaleString("es-CL")}</div>
+          <div class="prod-actions">
+            <button class="btn small btn-secondary" onclick="event.stopPropagation(); changeZoneOfProduct(${p.id})">Zona</button>
+          </div>
         </div>`;
       }).join("");
     }
@@ -470,19 +647,18 @@
     function focusProduct(id) {
       const p = products.find(p => p.id === id);
       if (!p) return;
-      if (!p.zone_id) {
-        alert("Este producto no tiene zona asignada en el mapa.");
-        return;
-      }
+      if (!p.zone_id) { alert("Este producto no tiene zona asignada."); return; }
       show("map");
-      setTimeout(() => {
-        selectZone(p.zone_id);
-        const el = document.getElementById("z" + p.zone_id);
-        if (el) el.scrollIntoView?.({ behavior: "smooth", block: "center", inline: "center" });
-      }, 300);
+      setTimeout(() => { selectZone(p.zone_id); }, 300);
     }
 
-    // ---------- SCAN ----------
+    function changeZoneOfProduct(id) {
+      const p = products.find(p => p.id === id);
+      if (!p) return;
+      openProductModal({ id, code: p.code, name: p.name, category: p.category, size: p.size, color: p.color, price: p.price, shelf_position: p.shelf_position, zone_id: p.zone_id, assignOnly: true });
+    }
+
+    // ================= SCAN =================
     let qrScanner = null;
     let cameraActive = false;
 
@@ -498,8 +674,7 @@
       const box = document.getElementById("cameraBox");
       const btn = document.getElementById("btnStartCam");
       box.style.display = "block";
-      btn.textContent = "Cargando cámara…";
-      btn.disabled = true;
+      btn.textContent = "Cargando…"; btn.disabled = true;
       try {
         qrScanner = new Html5Qrcode("cameraBox");
         await qrScanner.start(
@@ -510,23 +685,21 @@
             document.getElementById("inpScan").value = decodedText;
             processScannedCode(decodedText);
           },
-          (errorMessage) => {}
+          () => {}
         );
         cameraActive = true;
-        btn.textContent = "Cámara activa";
-        btn.disabled = false;
+        btn.textContent = "Cámara activa"; btn.disabled = false;
       } catch (err) {
         console.error(err);
         box.style.display = "none";
-        document.getElementById("scanError").textContent = "No se pudo acceder a la cámara. Usa HTTPS y permite la cámara.";
-        btn.textContent = "Iniciar cámara";
-        btn.disabled = false;
+        document.getElementById("scanError").textContent = "Permite el uso de la cámara y usa HTTPS.";
+        btn.textContent = "Iniciar cámara"; btn.disabled = false;
       }
     }
 
     function stopCamera() {
       if (qrScanner && cameraActive) {
-        qrScanner.stop().then(() => { qrScanner.clear(); }).catch(() => {});
+        qrScanner.stop().then(() => qrScanner.clear()).catch(() => {});
       }
       cameraActive = false;
       const btn = document.getElementById("btnStartCam");
@@ -538,11 +711,10 @@
       if (!code) return;
       document.getElementById("scanError").textContent = "";
       document.getElementById("cardResult").style.display = "none";
-      try {
-        const p = await api("/api/products/" + code);
+      const p = products.find(x => x.code === code);
+      if (p) {
         showExistingProduct(p);
-      } catch (err) {
-        // Producto no existe -> crear nuevo
+      } else {
         document.getElementById("scanError").textContent = `Producto "${code}" no está en el catálogo.`;
         await openProductModal({ code, newProduct: true });
       }
@@ -559,20 +731,13 @@
         <div class="m"><strong>Nombre:</strong> ${p.name}</div>
         <div class="m"><strong>Categoría:</strong> ${p.category} • ${p.size || "-"} • ${p.color || "-"}</div>
         <div class="m"><strong>Precio:</strong> ${(p.price || 0).toLocaleString("es-CL")}</div>
-        ${z ? `<div class="m zone">📍 Está en: ${z.name} (${z.type})</div>` : `<div class="m zone" style="color:#ef4444;">⚠️ Sin zona asignada</div>`}
+        ${z ? `<div class="m zone">📍 Está en: ${z.name}</div>` : `<div class="m zone" style="color:#ef4444;">⚠️ Sin zona asignada</div>`}
+        <div style="margin-top:12px;display:flex;gap:8px;">
+          <button class="btn small" onclick="goToMapForProduct(${p.id})">Ver en mapa</button>
+          ${!z ? `<button class="btn small btn-success" onclick="assignZoneToProduct(${p.id})">Asignar zona</button>` : `<button class="btn small btn-secondary" onclick="changeZoneOfProduct(${p.id})">Cambiar zona</button>`}
+        </div>
       `;
-      const scanErr = document.getElementById("scanError");
-      scanErr.textContent = "";
-      // Botones de acción rápidos
-      const actions = document.createElement("div");
-      actions.style.marginTop = "12px";
-      actions.style.display = "flex";
-      actions.style.gap = "8px";
-      actions.innerHTML = `
-        <button class="btn small" onclick="goToMapForProduct(${p.id})">Ver en mapa</button>
-        ${!z ? `<button class="btn small btn-success" onclick="assignZoneToProduct(${p.id})">Asignar zona</button>` : `<button class="btn small btn-secondary" onclick="changeZoneOfProduct(${p.id})">Cambiar zona</button>`}
-      `;
-      card.appendChild(actions);
+      document.getElementById("scanError").textContent = "";
     }
 
     function goToMapForProduct(id) {
@@ -583,18 +748,16 @@
     }
 
     function assignZoneToProduct(id) {
-      openProductModal({ id, newProduct: false, assignOnly: true });
+      const p = products.find(p => p.id === id);
+      openProductModal({ id, code: p.code, name: p.name, category: p.category, size: p.size, color: p.color, price: p.price, shelf_position: p.shelf_position, zone_id: null, assignOnly: true });
     }
 
-    function changeZoneOfProduct(id) {
-      openProductModal({ id, newProduct: false, assignOnly: true });
-    }
-
-    // ---------- Product modal ----------
+    // ================= PRODUCT MODAL =================
     function openProductModal(prefill) {
       const form = document.getElementById("formProduct");
       form.reset();
-      document.getElementById("prodId").value = prefill.id || "";
+      document.getElementById("prodIsNew").value = prefill.newProduct ? "1" : "0";
+      document.getElementById("prodIdHidden").value = prefill.id || "";
       document.getElementById("prodCode").value = prefill.code || "";
       document.getElementById("prodName").value = prefill.name || "";
       document.getElementById("prodCategory").value = prefill.category || "general";
@@ -603,21 +766,22 @@
       document.getElementById("prodPrice").value = prefill.price || "";
       document.getElementById("prodShelf").value = prefill.shelf_position || "";
       document.getElementById("modalProductTitle").textContent = prefill.newProduct ? "Nuevo producto" : "Editar producto";
-      renderZoneList(prefill.zone_id || (prefill.assignOnly ? null : ""));
+      renderZoneList(prefill.zone_id || null);
       document.getElementById("overlayProduct").style.display = "flex";
     }
 
+    let pickedZoneId = null;
     function renderZoneList(selectedId) {
+      pickedZoneId = selectedId;
       const list = document.getElementById("prodZoneList");
       list.innerHTML = zones.map(z => {
         const sel = z.id === selectedId ? "selected" : "";
-        return `<div class="zone-item ${sel}" onclick="pickZone(${z.id}, '${z.name}')" data-id="${z.id}">${z.name} (${z.type})</div>`;
-      }).join("") || `<div style="font-size:12px;color:#94a3b8;">No hay zonas. Crea una en el mapa primero.</div>`;
-      window.__pickedZone = selectedId;
+        return `<div class="zone-item ${sel}" onclick="pickZone(${z.id})" data-id="${z.id}">${z.name} (${z.type})</div>`;
+      }).join("") || `<div style="font-size:11px;color:#94a3b8;">No hay zonas. Crea una en el mapa.</div>`;
     }
 
-    function pickZone(id, name) {
-      window.__pickedZone = id;
+    function pickZone(id) {
+      pickedZoneId = id;
       document.querySelectorAll(".zone-item").forEach(el => {
         el.classList.toggle("selected", parseInt(el.dataset.id) === id);
       });
@@ -625,8 +789,10 @@
 
     async function saveProduct(e) {
       e.preventDefault();
-      const id = document.getElementById("prodId").value;
+      const isNew = document.getElementById("prodIsNew").value === "1";
+      const bodyId = isNew ? nextId(products) : (parseInt(document.getElementById("prodIdHidden").value) || nextId(products));
       const body = {
+        id: bodyId,
         code: document.getElementById("prodCode").value,
         name: document.getElementById("prodName").value,
         category: document.getElementById("prodCategory").value,
@@ -634,33 +800,27 @@
         color: document.getElementById("prodColor").value || null,
         price: parseFloat(document.getElementById("prodPrice").value) || 0,
         shelf_position: document.getElementById("prodShelf").value || null,
-        zone_id: window.__pickedZone || null,
+        zone_id: pickedZoneId || null,
       };
-      try {
-        if (id) {
-          await api(`/api/products/${body.code}`, { method: "PUT", body: JSON.stringify(body) });
-        } else {
-          await api("/api/products", { method: "POST", body: JSON.stringify(body) });
-        }
-        closeProductModal();
-        await loadData();
-        renderSearch();
-        renderMap();
-      } catch (err) { alert("Error guardando producto"); }
+      if (isNew) {
+        products.push(body);
+      } else {
+        const idx = products.findIndex(p => p.code === body.code);
+        if (idx !== -1) products[idx] = body;
+      }
+      saveLocal();
+      pushProductToServer(body);
+      closeProductModal();
+      renderMap();
+      renderSearch();
     }
 
     function closeProductModal() {
       document.getElementById("overlayProduct").style.display = "none";
-      window.__pickedZone = null;
+      pickedZoneId = null;
     }
 
-    async function apiFetch(path, opts) {
-      const r = await fetch(`${API}${path}`, Object.assign({ headers: { "Content-Type": "application/json" } }, opts));
-      if (!r.ok) throw new Error("Error " + r.status);
-      return r.json();
-    }
-
-    // ---------- PWA install ----------
+    // ================= PWA INSTALL =================
     let deferredPrompt;
     window.addEventListener("beforeinstallprompt", (e) => {
       e.preventDefault();
@@ -669,12 +829,13 @@
       btn.textContent = "Instalar app";
       btn.className = "btn";
       btn.style.position = "fixed"; btn.style.bottom = "20px"; btn.style.right = "16px"; btn.style.zIndex = "1000";
-      btn.onclick = async () => { if (deferredPrompt) { deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; btn.remove(); } };
+      btn.onclick = async () => { if (deferredPrompt) { await deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; btn.remove(); } };
       document.body.appendChild(btn);
     });
 
-    // ---------- init ----------
-    loadData();
+    // ================= INIT =================
+    loadLocal();
+    syncWithServer();
   </script>
 </body>
 </html>
