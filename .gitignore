@@ -1,0 +1,9 @@
+node_modules/
+android/
+ios/
+.expo/
+*.log
+.env
+*.apk
+*.aab
+test-pkg.json
