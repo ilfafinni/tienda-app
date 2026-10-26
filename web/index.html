@@ -13,58 +13,84 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #f8fafc; color: #1e293b; }
     #app { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-    header { background: #3b82f6; color: #fff; padding: 12px 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
+    header { background: #3b82f6; color: #fff; padding: 12px 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); z-index: 100; }
     header h1 { font-size: 18px; font-weight: 700; }
-    .back { border: none; background: rgba(255,255,255,0.2); color: #fff; border-radius: 8px; padding: 6px 12px; font-size: 16px; cursor: pointer; }
-    .back:hidden { display: none; }
-    main { flex: 1; overflow-y: auto; padding: 16px; }
+    .back { border: none; background: rgba(255,255,255,0.2); color: #fff; border-radius: 8px; padding: 6px 12px; font-size: 16px; cursor: pointer; display: none; }
+    .edit-toggle { margin-left: auto; font-size: 13px; padding: 6px 12px; border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; background: rgba(255,255,255,0.15); color: #fff; cursor: pointer; }
+    .edit-toggle.active { background: #f59e0b; border-color: #f59e0b; }
+    main { flex: 1; overflow-y: auto; padding: 16px; position: relative; }
     section.screen { display: none; }
     section.screen.active { display: block; }
-    .title { font-size: 26px; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.5px; }
-    .subtitle { color: #64748b; font-size: 15px; margin-bottom: 24px; text-align: center; }
+    .title { font-size: 24px; font-weight: 800; margin-bottom: 6px; letter-spacing: -0.5px; }
+    .subtitle { color: #64748b; font-size: 14px; margin-bottom: 18px; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .card { background: #fff; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; align-items: center; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); cursor: pointer; transition: transform .1s; }
+    .card { background: #fff; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; align-items: center; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); cursor: pointer; transition: transform .1s; border: 1px solid #f1f5f9; }
     .card:active { transform: scale(0.97); }
-    .card .icon { font-size: 40px; margin-bottom: 10px; }
-    .card .t { font-weight: 700; font-size: 16px; margin-bottom: 4px; }
-    .card .d { font-size: 13px; color: #64748b; }
+    .card .icon { font-size: 38px; margin-bottom: 8px; }
+    .card .t { font-weight: 700; font-size: 15px; margin-bottom: 3px; }
+    .card .d { font-size: 12px; color: #64748b; }
     /* search */
     .search-box { position: relative; margin-bottom: 16px; }
-    .search-box input { width: 100%; padding: 12px 16px 12px 42px; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 15px; outline: none; background: #fff; }
+    .search-box input { width: 100%; padding: 12px 16px 12px 44px; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 15px; outline: none; background: #fff; }
     .search-box input:focus { border-color: #3b82f6; }
     .search-box .ico { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 18px; color: #94a3b8; }
-    .prod-list { display: flex; flex-direction: column; gap: 10px; }
-    .prod { background: #fff; border-radius: 12px; padding: 12px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 4px rgba(0,0,0,0.05); cursor: pointer; }
+    .prod-list { display: flex; flex-direction: column; gap: 8px; }
+    .prod { background: #fff; border-radius: 12px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 4px rgba(0,0,0,0.05); cursor: pointer; border: 1px solid #f1f5f9; }
+    .prod:active { background: #f8fafc; }
     .prod .info .code { font-weight: 800; font-size: 13px; color: #3b82f6; }
-    .prod .info .name { font-weight: 700; font-size: 15px; margin-top: 2px; }
-    .prod .info .meta { font-size: 12px; color: #64748b; margin-top: 2px; }
-    .prod .price { font-weight: 800; font-size: 16px; }
-    .empty { text-align: center; color: #64748b; margin-top: 40px; }
-    .loading { text-align: center; color: #64748b; margin-top: 40px; }
+    .prod .info .name { font-weight: 700; font-size: 14px; margin-top: 1px; }
+    .prod .info .meta { font-size: 11px; color: #64748b; margin-top: 1px; }
+    .prod .info .zone { font-size: 11px; color: #10b981; font-weight: 700; margin-top: 2px; }
+    .prod .price { font-weight: 800; font-size: 15px; }
+    .empty { text-align: center; color: #64748b; margin-top: 50px; }
+    .loading { text-align: center; color: #64748b; margin-top: 50px; }
     /* map */
-    .map-wrap { border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background: #fff; height: 60vh; position: relative; }
-    svg#map { width: 100%; height: 100%; display: block; cursor: pointer; }
-    .zone { stroke: #fff; stroke-width: 2; cursor: pointer; transition: filter .2s; }
-    .zone:hover { filter: brightness(1.15); }
-    .zone-label { font-size: 11px; fill: #fff; font-weight: 700; pointer-events: none; text-anchor: middle; dominant-baseline: middle; }
+    .map-toolbar { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
+    .map-wrap { border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; background: #fff; height: 55vh; position: relative; touch-action: none; }
+    svg#map { width: 100%; height: 100%; display: block; cursor: grab; background: #fbfcfd; }
+    svg#map:active { cursor: grabbing; }
+    .zone { stroke: #fff; stroke-width: 3; cursor: pointer; transition: filter .2s, stroke .2s; }
+    .zone.selected { stroke: #f59e0b; stroke-width: 4; filter: drop-shadow(0 0 6px rgba(245,158,11,0.6)); }
+    .zone-label { font-size: 10px; fill: #fff; font-weight: 800; pointer-events: none; text-anchor: middle; dominant-baseline: middle; }
+    .zone-products { font-size: 9px; fill: #ffe4e4; font-weight: 700; pointer-events: none; text-anchor: middle; dominant-baseline: middle; }
     .map-controls { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
     .btn { border: none; background: #3b82f6; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; }
     .btn:active { background: #2563eb; }
     .btn.secondary { background: #f1f5f9; color: #475569; }
+    .btn.small { padding: 8px 12px; font-size: 13px; }
     .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn.success { background: #10b981; }
+    .btn.success:active { background: #059669; }
+    .btn.danger { background: #ef4444; }
+    .btn.danger:active { background: #dc2626; }
     /* scanner */
-    .scan-box { background: #fff; border-radius: 16px; padding: 16px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-    .scan-box .big { font-size: 48px; margin-bottom: 12px; }
-    .scan-box input { width: 85%; max-width: 320px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 16px; text-align: center; margin-bottom: 12px; }
-    .camera-box { border: 2px dashed #cbd5e1; border-radius: 12px; background: #000; margin: 12px 0; display: none; }
+    .scan-box { background: #fff; border-radius: 14px; padding: 16px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .scan-box .big { font-size: 44px; margin-bottom: 10px; }
+    .scan-box input { width: 85%; max-width: 320px; padding: 12px; border: 1px solid #e2e8f0; border-radius 10px; font-size: 16px; text-align: center; margin-bottom: 10px; }
+    .camera-box { border: 2px dashed #cbd5e1; border-radius: 12px; background: #000; margin: 10px 0; display: none; }
     .camera-controls { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
-    .result-card { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 16px; margin-top: 16px; text-align: left; display: none; }
-    .result-card .t { font-weight: 800; font-size: 17px; margin-bottom: 6px; }
-    .result-card .m { font-size: 13px; color: #475569; margin: 2px 0; }
+    .result-card { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 16px; margin-top: 16px; text-align: left; }
+    .result-card.none { background: #fef2f2; border-color: #fecaca; }
+    .result-card .t { font-weight: 800; font-size: 17px; margin-bottom: 8px; }
+    .result-card .m { font-size: 13px; color: #475569; margin: 3px 0; }
     .result-card .zone { color: #3b82f6; font-weight: 700; }
-    .error { color: #dc2626; font-size: 14px; margin-top: 10px; }
+    .error { color: #dc2626; font-size: 13px; margin-top: 8px; }
     .footer { padding: 12px 16px; color: #94a3b8; font-size: 12px; text-align: center; border-top: 1px solid #e2e8f0; }
-    @media (max-width: 480px) { .grid { grid-template-columns: 1fr; } .map-wrap { height: 50vh; } }
+    /* modals */
+    .overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); display: none; align-items: center; justify-content: center; z-index: 200; backdrop-filter: blur(2px); }
+    .modal { background: #fff; border-radius: 16px; width: 92%; max-width: 420px; max-height: 85vh; overflow-y: auto; padding: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.25); }
+    .modal h2 { font-size: 18px; margin-bottom: 16px; }
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-size: 13px; font-weight: 700; color: #374151; margin-bottom: 6px; }
+    .form-group input, .form-group select { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 10px; font-size: 14px; background: #fff; }
+    .form-group input:focus, .form-group select:focus { border-color: #3b82f6; outline: none; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 18px; justify-content: flex-end; }
+    .zone-list { max-height: 200px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px; margin-bottom: 14px; }
+    .zone-item { padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; margin-bottom: 6px; border: 1px solid transparent; }
+    .zone-item:hover { background: #f1f5f9; }
+    .zone-item.selected { background: #dbeafe; border-color: #3b82f6; color: #1e40af; font-weight: 700; }
+    .hint { font-size: 12px; color: #64748b; margin-top: 6px; }
+    @media (max-width: 480px) { .grid { grid-template-columns: 1fr; } .map-wrap { height: 45vh; } }
   </style>
 </head>
 <body>
@@ -72,6 +98,7 @@
     <header>
       <button class="back" id="btnBack" onclick="goBack()">←</button>
       <h1 id="hTitle">Mi Tienda</h1>
+      <button class="edit-toggle" id="btnEditMap" onclick="toggleEditMode()">Editar mapa</button>
     </header>
     <main>
       <!-- Home -->
@@ -82,17 +109,17 @@
           <div class="card" onclick="show('map')">
             <div class="icon">🗺️</div>
             <div class="t">Mapa de la tienda</div>
-            <div class="d">Ver dónde está cada producto</div>
+            <div class="d">Ubica productos en zonas</div>
           </div>
           <div class="card" onclick="show('search')">
             <div class="icon">🔍</div>
             <div class="t">Buscar producto</div>
-            <div class="d">Por código, nombre o categoría</div>
+            <div class="d">Escanea o busca por código</div>
           </div>
           <div class="card" onclick="show('scan')">
             <div class="icon">📷</div>
             <div class="t">Escanear producto</div>
-            <div class="d">Lee el código de barras</div>
+            <div class="d">Cámara o código manual</div>
           </div>
         </div>
       </section>
@@ -100,11 +127,16 @@
       <!-- Map -->
       <section class="screen" id="screenMap">
         <div class="title">🗺️ Mapa de la tienda</div>
-        <div class="subtitle">Toca un mueble para ver sus productos</div>
+        <div class="subtitle">Arrastra los muebles y asigna productos</div>
+        <div class="map-toolbar">
+          <button class="btn small btn-success" onclick="addZone()">+ Agregar mueble</button>
+          <button class="btn small btn-secondary" onclick="centerMap()">Centrar</button>
+          <span id="editInfo" style="font-size:12px;color:#64748b;display:none;">Modo edición: arrastra los recuadros</span>
+        </div>
         <div class="map-wrap" id="mapWrap">
           <svg id="map" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet"></svg>
         </div>
-        <div id="mapEmpty" style="display:none; text-align:center; color:#64748b; margin-top:20px;">No hay zonas cargadas.</div>
+        <div id="mapEmpty" style="display:none; text-align:center; color:#64748b; margin-top:30px;">No hay zonas. Agrega un mueble para empezar.</div>
         <div class="map-controls">
           <button class="btn secondary" onclick="show('home')">Volver</button>
         </div>
@@ -113,6 +145,7 @@
       <!-- Search -->
       <section class="screen" id="screenSearch">
         <div class="title">🔍 Buscar producto</div>
+        <div class="subtitle">Escanea el código para ver dónde está</div>
         <div class="search-box">
           <span class="ico">🔍</span>
           <input id="inpSearch" placeholder="Código, nombre o categoría (ej: PNT-001, polera)" autocomplete="off">
@@ -123,7 +156,7 @@
       <!-- Scan -->
       <section class="screen" id="screenScan">
         <div class="title">📷 Escanear producto</div>
-        <div class="subtitle">Apunta la cámara al código de barras del producto</div>
+        <div class="subtitle">Apunta al código de barras o escríbelo manualmente</div>
         <div class="scan-box">
           <div class="big">📦</div>
           <div id="cameraBox" class="camera-box"></div>
@@ -131,7 +164,7 @@
             <button class="btn" id="btnStartCam" onclick="toggleCamera()">Iniciar cámara</button>
             <button class="btn secondary" onclick="stopCamera()">Detener</button>
           </div>
-          <input id="inpScan" placeholder="O escribe el código manualmente (ej: PNT-001)" autocomplete="off">
+          <input id="inpScan" placeholder="O escribe el código (ej: PNT-001)" autocomplete="off">
           <div class="result-card" id="cardResult"></div>
           <div id="scanError" class="error"></div>
         </div>
@@ -140,30 +173,111 @@
         </div>
       </section>
     </main>
-    <div class="footer">Mi Tienda · zona web</div>
+    <div class="footer">Mi Tienda · versión web</div>
+  </div>
+
+  <!-- Modal: crear / editar producto -->
+  <div class="overlay" id="overlayProduct"></div>
+  <div class="modal" id="modalProduct">
+    <h2 id="modalProductTitle">Producto</h2>
+    <form id="formProduct" onsubmit="saveProduct(event)">
+      <input type="hidden" id="prodId">
+      <div class="form-group">
+        <label>Código</label>
+        <input type="text" id="prodCode" placeholder="Ej: PNT-001" required>
+      </div>
+      <div class="form-group">
+        <label>Nombre</label>
+        <input type="text" id="prodName" placeholder="Ej: Pantalón jean azul" required>
+      </div>
+      <div class="form-group">
+        <label>Categoría</label>
+        <select id="prodCategory">
+          <option value="general">General</option>
+          <option value="pantalon">Pantalón</option>
+          <option value="polera">Polera</option>
+          <option value="zapato">Zapato</option>
+          <option value="vestido">Vestido</option>
+          <option value="chaqueta">Chaqueta</option>
+          <option value="accesorio">Accesorio</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Talla</label>
+        <input type="text" id="prodSize" placeholder="Ej: M, L, 42">
+      </div>
+      <div class="form-group">
+        <label>Color</label>
+        <input type="text" id="prodColor" placeholder="Ej: azul, negro">
+      </div>
+      <div class="form-group">
+        <label>Precio</label>
+        <input type="number" id="prodPrice" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label>Posición en estante</label>
+        <input type="text" id="prodShelf" placeholder="Ej: fila 1, columna A">
+      </div>
+      <div class="form-group">
+        <label>Zona en el mapa</label>
+        <div class="zone-list" id="prodZoneList"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" onclick="closeProductModal()">Cancelar</button>
+        <button type="submit" class="btn success">Guardar producto</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Modal: editar zona -->
+  <div class="overlay" id="overlayZone"></div>
+  <div class="modal" id="modalZone">
+    <h2 id="modalZoneTitle">Mueble / Zona</h2>
+    <form id="formZone" onsubmit="saveZone(event)">
+      <input type="hidden" id="zoneId">
+      <div class="form-group">
+        <label>Nombre</label>
+        <input type="text" id="zoneName" required>
+      </div>
+      <div class="form-group">
+        <label>Tipo</label>
+        <select id="zoneType">
+          <option value="floorstand">Floorstand</option>
+          <option value="mesa">Mesa</option>
+          <option value="estante">Estante</option>
+          <option value="pared">Pared</option>
+          <option value="entrada">Entrada</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Color</label>
+        <input type="color" id="zoneColor" value="#3b82f6">
+      </div>
+      <div class="form-group">
+        <label>Piso</label>
+        <input type="number" id="zoneFloor" value="1" min="1">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" onclick="closeZoneModal()">Cancelar</button>
+        <button type="submit" class="btn success">Guardar mueble</button>
+      </div>
+    </form>
   </div>
 
   <script>
     const API = "https://tienda-server-six.vercel.app";
     let zones = [], products = [];
+    let editingMap = false;
+    let draggingZone = null;
+    let mapOffset = { x: 0, y: 0 };
+    let mapScale = 1;
+    let selectedZoneId = null;
 
-    async function api(path) {
-      const r = await fetch(`${API}${path}`);
+    async function api(path, opts) {
+      const r = await fetch(`${API}${path}`, Object.assign({ headers: { "Content-Type": "application/json" } }, opts || {}));
       if (!r.ok) throw new Error("Error " + r.status);
       return r.json();
     }
-
-    function show(screen) {
-      document.querySelectorAll("section.screen").forEach(s => s.classList.remove("active"));
-      document.getElementById("screen" + screen.charAt(0).toUpperCase() + screen.slice(1)).classList.add("active");
-      document.getElementById("btnBack").style.display = screen === "home" ? "none" : "inline-block";
-      document.getElementById("hTitle").textContent =
-        { home: "Mi Tienda", map: "Mapa de la tienda", search: "Buscar producto", scan: "Escanear producto" }[screen];
-      if (screen === "map") renderMap();
-      if (screen === "scan") { stopCamera(); document.getElementById("inpScan").value = ""; document.getElementById("cardResult").style.display = "none"; document.getElementById("scanError").textContent = ""; }
-    }
-
-    function goBack() { show("home"); }
 
     async function loadData() {
       try {
@@ -172,10 +286,160 @@
       } catch (e) { console.error(e); }
     }
 
-    // ---------- HOME ----------
-    document.getElementById("inpSearch").addEventListener("input", debounce(renderSearch, 300));
+    function show(screen) {
+      document.querySelectorAll("section.screen").forEach(s => s.classList.remove("active"));
+      document.getElementById("screen" + screen.charAt(0).toUpperCase() + screen.slice(1)).classList.add("active");
+      document.getElementById("btnBack").style.display = screen === "home" ? "none" : "inline-block";
+      document.getElementById("btnEditMap").style.display = screen === "map" ? "inline-block" : "none";
+      document.getElementById("hTitle").textContent =
+        { home: "Mi Tienda", map: "Mapa de la tienda", search: "Buscar producto", scan: "Escanear producto" }[screen];
+      if (screen === "map") { renderMap(); }
+      if (screen === "scan") { stopCamera(); document.getElementById("inpScan").value = ""; document.getElementById("cardResult").style.display = "none"; document.getElementById("scanError").textContent = ""; }
+    }
+
+    function goBack() { show("home"); }
+
+    function toggleEditMode() {
+      editingMap = !editingMap;
+      const btn = document.getElementById("btnEditMap");
+      const info = document.getElementById("editInfo");
+      btn.classList.toggle("active", editingMap);
+      info.style.display = editingMap ? "inline" : "none";
+      selectedZoneId = null;
+      renderMap();
+    }
+
+    // ---------- MAP ----------
+    function renderMap() {
+      const svg = document.getElementById("map");
+      const empty = document.getElementById("mapEmpty");
+      if (!zones || zones.length === 0) { svg.innerHTML = ""; empty.style.display = "block"; return; }
+      empty.style.display = "none";
+      let html = "";
+      zones.forEach(z => {
+        const prods = products.filter(p => p.zone_id === z.id);
+        const isSel = selectedZoneId === z.id;
+        const cx = z.x + (z.w || 100) / 2;
+        const cy = z.y + (z.h || 80) / 2;
+        html += `
+          <rect class="zone ${isSel ? 'selected' : ''}" id="z${z.id}"
+            x="${z.x}" y="${z.y}" width="${z.w || 100}" height="${z.h || 80}" rx="12" ry="12"
+            fill="${z.color || '#3b82f6'}" data-id="${z.id}"
+            onclick="selectZone(${z.id})"
+            onmousedown="startDrag(event, ${z.id})"></rect>
+          <text class="zone-label" x="${cx}" y="${cy - 6}" data-id="${z.id}" onclick="selectZone(${z.id})">${z.name}</text>
+          ${prods.length > 0 ? `<text class="zone-products" x="${cx}" y="${cy + 10}" data-id="${z.id}" onclick="selectZone(${z.id})">${prods.length} productos</text>` : ""}
+        `;
+      });
+      svg.innerHTML = html;
+    }
+
+    function selectZone(id) {
+      if (!editingMap) return;
+      selectedZoneId = id === selectedZoneId ? null : id;
+      renderMap();
+      if (id) {
+        const z = zones.find(z => z.id === id);
+        if (z) openZoneEditor(z);
+      }
+    }
+
+    function startDrag(e, id) {
+      if (!editingMap) return;
+      e.preventDefault();
+      e.stopPropagation();
+      selectedZoneId = id;
+      const z = zones.find(z => z.id === id);
+      const pt = svgPoint(svg, e.clientX, e.clientY);
+      draggingZone = { id, startX: z.x, startY: z.y, curX: pt.x, curY: pt.y };
+      renderMap();
+      window.addEventListener("mousemove", onDragMove);
+      window.addEventListener("mouseup", onDragEnd);
+    }
+
+    function svgPoint(svg, x, y) {
+      const pt = svg.createSVGPoint();
+      pt.x = x; pt.y = y;
+      return pt.matrixTransform(svg.getScreenCTM().inverse());
+    }
+
+    function onDragMove(e) {
+      if (!draggingZone) return;
+      e.preventDefault();
+      const pt = svgPoint(svg, e.clientX, e.clientY);
+      draggingZone.curX = pt.x; draggingZone.curY = pt.y;
+      const z = zones.find(z => z.id === draggingZone.id);
+      if (z) {
+        z.x = draggingZone.curX - (z.w || 100) / 2;
+        z.y = draggingZone.curY - (z.h || 80) / 2;
+        renderMap();
+      }
+    }
+
+    function onDragEnd() {
+      if (!draggingZone) return;
+      const z = zones.find(z => z.id === draggingZone.id);
+      if (z) {
+        api(`/api/zones/${z.id}`, { method: "PUT", body: JSON.stringify({ x: Math.round(z.x), y: Math.round(z.y), w: z.w, h: z.h, color: z.color, type: z.type, name: z.name, floor: z.floor }) }).catch(() => {});
+      }
+      draggingZone = null;
+      window.removeEventListener("mousemove", onDragMove);
+      window.removeEventListener("mouseup", onDragEnd);
+    }
+
+    function centerMap() {
+      const svg = document.getElementById("map");
+      svg.setAttribute("viewBox", "0 0 1000 1000");
+    }
+
+    async function addZone() {
+      const name = prompt("Nombre del mueble (ej: Estante A):");
+      if (!name) return;
+      const type = prompt("Tipo (floorstand, mesa, estante, pared, entrada):", "estante");
+      if (!type) return;
+      const color = prompt("Color hex (ej: #3b82f6):", "#3b82f6");
+      try {
+        const created = await api("/api/zones", {
+          method: "POST",
+          body: JSON.stringify({ name, type, x: 400, y: 400, w: 140, h: 120, color, floor: 1 })
+        });
+        zones.push(created);
+        renderMap();
+      } catch (err) { alert("Error creando mueble"); }
+    }
+
+    function openZoneEditor(z) {
+      document.getElementById("zoneId").value = z.id;
+      document.getElementById("zoneName").value = z.name;
+      document.getElementById("zoneType").value = z.type;
+      document.getElementById("zoneColor").value = z.color;
+      document.getElementById("zoneFloor").value = z.floor;
+      document.getElementById("overlayZone").style.display = "flex";
+    }
+
+    async function saveZone(e) {
+      e.preventDefault();
+      const id = parseInt(document.getElementById("zoneId").value);
+      const body = {
+        name: document.getElementById("zoneName").value,
+        type: document.getElementById("zoneType").value,
+        color: document.getElementById("zoneColor").value,
+        floor: parseInt(document.getElementById("zoneFloor").value) || 1,
+      };
+      try {
+        const updated = await api(`/api/zones/${id}`, { method: "PUT", body: JSON.stringify(body) });
+        const idx = zones.findIndex(z => z.id === id);
+        if (idx !== -1) zones[idx] = updated;
+        renderMap();
+        closeZoneModal();
+      } catch (err) { alert("Error guardando mueble"); }
+    }
+
+    function closeZoneModal() { document.getElementById("overlayZone").style.display = "none"; }
 
     // ---------- SEARCH ----------
+    document.getElementById("inpSearch").addEventListener("input", debounce(renderSearch, 300));
+
     function renderSearch() {
       const q = document.getElementById("inpSearch").value.toLowerCase();
       const box = document.getElementById("searchResults");
@@ -189,53 +453,31 @@
       box.innerHTML = res.map(p => {
         const z = zones.find(z => z.id === p.zone_id);
         return `
-        <div class="prod" onclick="showZone(${p.zone_id || 0})">
+        <div class="prod" onclick="focusProduct(${p.id})">
           <div class="info">
             <div class="code">${p.code}</div>
             <div class="name">${p.name}</div>
-            <div class="meta">${p.category} • ${p.size || "-"} • ${p.color || "-"} ${z ? "📍 " + z.name + " (" + z.type + ")" : "Sin zona"}</div>
+            <div class="meta">${p.category} • ${p.size || "-"} • ${p.color || "-"}</div>
+            ${z ? `<div class="zone">📍 ${z.name} (${z.type})</div>` : `<div style="color:#ef4444;">Sin zona asignada</div>`}
           </div>
           <div class="price">${(p.price || 0).toLocaleString("es-CL")}</div>
         </div>`;
       }).join("");
     }
 
-    function debounce(fn, wait) {
-      let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
-    }
+    function debounce(fn, wait) { let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); }; }
 
-    // ---------- MAP ----------
-    function renderMap() {
-      const svg = document.getElementById("map");
-      const empty = document.getElementById("mapEmpty");
-      if (!zones || zones.length === 0) { svg.innerHTML = ""; empty.style.display = "block"; return; }
-      empty.style.display = "none";
-      let html = "";
-      zones.forEach(z => {
-        const labelX = z.x + (z.w || 0) / 2;
-        const labelY = z.y + (z.h || 0) / 2;
-        const zoneProds = products.filter(p => p.zone_id === z.id).length;
-        html += `
-          <rect class="zone" id="z${z.id}" x="${z.x}" y="${z.y}" width="${z.w || 100}" height="${z.h || 80}" rx="12" ry="12" fill="${z.color || "#3b82f6"}" data-id="${z.id}" onclick="selectZone(${z.id})"></rect>
-          <text class="zone-label" x="${labelX}" y="${labelY}" data-id="${z.id}" onclick="selectZone(${z.id})">${z.name}</text>
-          ${zoneProds > 0 ? `<text class="zone-label" x="${labelX}" y="${labelY + 16}" fill="#ffe4e4" font-size="10" font-weight="600" data-id="${z.id}" onclick="selectZone(${z.id})">${zoneProds} productos</text>` : ""}
-        `;
-      });
-      svg.innerHTML = html;
-    }
-
-    function selectZone(id) {
-      const z = zones.find(z => z.id === id);
-      if (!z) return;
-      const prods = products.filter(p => p.zone_id === id);
-      alert(z.name + "\n" + (prods.length ? prods.map(p => "• " + p.name).join("\n") : "Sin productos asignados"));
-    }
-
-    function showZone(id) {
-      if (!id) return;
+    function focusProduct(id) {
+      const p = products.find(p => p.id === id);
+      if (!p) return;
+      if (!p.zone_id) {
+        alert("Este producto no tiene zona asignada en el mapa.");
+        return;
+      }
       show("map");
       setTimeout(() => {
-        const el = document.getElementById("z" + id);
+        selectZone(p.zone_id);
+        const el = document.getElementById("z" + p.zone_id);
         if (el) el.scrollIntoView?.({ behavior: "smooth", block: "center", inline: "center" });
       }, 300);
     }
@@ -261,25 +503,22 @@
       try {
         qrScanner = new Html5Qrcode("cameraBox");
         await qrScanner.start(
-          { facingMode: "environment" }, // cámara trasera en móvil
+          { facingMode: "environment" },
           { fps: 10, qrbox: 250 },
           (decodedText) => {
-            // Se detectó un código de barras/QR
             stopCamera();
             document.getElementById("inpScan").value = decodedText;
             processScannedCode(decodedText);
           },
-          (errorMessage) => {
-            // errores de escaneo continuo se ignoran
-          }
+          (errorMessage) => {}
         );
         cameraActive = true;
-        btn.textContent = "Usar cámara trasera";
+        btn.textContent = "Cámara activa";
         btn.disabled = false;
       } catch (err) {
         console.error(err);
         box.style.display = "none";
-        document.getElementById("scanError").textContent = "No se pudo acceder a la cámara. Asegúrate de permitir el uso de la cámara y usa HTTPS o localhost.";
+        document.getElementById("scanError").textContent = "No se pudo acceder a la cámara. Usa HTTPS y permite la cámara.";
         btn.textContent = "Iniciar cámara";
         btn.disabled = false;
       }
@@ -287,10 +526,7 @@
 
     function stopCamera() {
       if (qrScanner && cameraActive) {
-        qrScanner.stop().then(() => {
-          qrScanner.clear();
-          cameraActive = false;
-        }).catch(() => {});
+        qrScanner.stop().then(() => { qrScanner.clear(); }).catch(() => {});
       }
       cameraActive = false;
       const btn = document.getElementById("btnStartCam");
@@ -304,21 +540,118 @@
       document.getElementById("cardResult").style.display = "none";
       try {
         const p = await api("/api/products/" + code);
-        const z = zones.find(z => z.id === p.zone_id);
-        document.getElementById("cardResult").style.display = "block";
-        document.getElementById("cardResult").innerHTML = `
-          <div class="t">Producto escaneado</div>
-          <div class="m"><strong>Código:</strong> ${p.code}</div>
-          <div class="m"><strong>Nombre:</strong> ${p.name}</div>
-          <div class="m"><strong>Categoría:</strong> ${p.category} • ${p.size || "-"} • ${p.color || "-"}</div>
-          <div class="m"><strong>Precio:</strong> ${(p.price || 0).toLocaleString("es-CL")}</div>
-          <div class="m zone">📍 ${z ? z.name : "Sin zona asignada"} ${z ? "(" + z.type + ")" : ""}</div>
-        `;
-        // registrar escaneo
-        try { await apiFetch("/api/scans", { method: "POST", body: JSON.stringify({ product_code: code, device: "web" }) }); } catch (err) {}
+        showExistingProduct(p);
       } catch (err) {
-        document.getElementById("scanError").textContent = 'Producto "' + code + '" no encontrado.';
+        // Producto no existe -> crear nuevo
+        document.getElementById("scanError").textContent = `Producto "${code}" no está en el catálogo.`;
+        await openProductModal({ code, newProduct: true });
       }
+    }
+
+    function showExistingProduct(p) {
+      const z = zones.find(z => z.id === p.zone_id);
+      const card = document.getElementById("cardResult");
+      card.className = "result-card";
+      card.style.display = "block";
+      card.innerHTML = `
+        <div class="t">✅ Producto encontrado</div>
+        <div class="m"><strong>Código:</strong> ${p.code}</div>
+        <div class="m"><strong>Nombre:</strong> ${p.name}</div>
+        <div class="m"><strong>Categoría:</strong> ${p.category} • ${p.size || "-"} • ${p.color || "-"}</div>
+        <div class="m"><strong>Precio:</strong> ${(p.price || 0).toLocaleString("es-CL")}</div>
+        ${z ? `<div class="m zone">📍 Está en: ${z.name} (${z.type})</div>` : `<div class="m zone" style="color:#ef4444;">⚠️ Sin zona asignada</div>`}
+      `;
+      const scanErr = document.getElementById("scanError");
+      scanErr.textContent = "";
+      // Botones de acción rápidos
+      const actions = document.createElement("div");
+      actions.style.marginTop = "12px";
+      actions.style.display = "flex";
+      actions.style.gap = "8px";
+      actions.innerHTML = `
+        <button class="btn small" onclick="goToMapForProduct(${p.id})">Ver en mapa</button>
+        ${!z ? `<button class="btn small btn-success" onclick="assignZoneToProduct(${p.id})">Asignar zona</button>` : `<button class="btn small btn-secondary" onclick="changeZoneOfProduct(${p.id})">Cambiar zona</button>`}
+      `;
+      card.appendChild(actions);
+    }
+
+    function goToMapForProduct(id) {
+      const p = products.find(p => p.id === id);
+      if (!p || !p.zone_id) return;
+      show("map");
+      setTimeout(() => { selectZone(p.zone_id); }, 300);
+    }
+
+    function assignZoneToProduct(id) {
+      openProductModal({ id, newProduct: false, assignOnly: true });
+    }
+
+    function changeZoneOfProduct(id) {
+      openProductModal({ id, newProduct: false, assignOnly: true });
+    }
+
+    // ---------- Product modal ----------
+    function openProductModal(prefill) {
+      const form = document.getElementById("formProduct");
+      form.reset();
+      document.getElementById("prodId").value = prefill.id || "";
+      document.getElementById("prodCode").value = prefill.code || "";
+      document.getElementById("prodName").value = prefill.name || "";
+      document.getElementById("prodCategory").value = prefill.category || "general";
+      document.getElementById("prodSize").value = prefill.size || "";
+      document.getElementById("prodColor").value = prefill.color || "";
+      document.getElementById("prodPrice").value = prefill.price || "";
+      document.getElementById("prodShelf").value = prefill.shelf_position || "";
+      document.getElementById("modalProductTitle").textContent = prefill.newProduct ? "Nuevo producto" : "Editar producto";
+      renderZoneList(prefill.zone_id || (prefill.assignOnly ? null : ""));
+      document.getElementById("overlayProduct").style.display = "flex";
+    }
+
+    function renderZoneList(selectedId) {
+      const list = document.getElementById("prodZoneList");
+      list.innerHTML = zones.map(z => {
+        const sel = z.id === selectedId ? "selected" : "";
+        return `<div class="zone-item ${sel}" onclick="pickZone(${z.id}, '${z.name}')" data-id="${z.id}">${z.name} (${z.type})</div>`;
+      }).join("") || `<div style="font-size:12px;color:#94a3b8;">No hay zonas. Crea una en el mapa primero.</div>`;
+      window.__pickedZone = selectedId;
+    }
+
+    function pickZone(id, name) {
+      window.__pickedZone = id;
+      document.querySelectorAll(".zone-item").forEach(el => {
+        el.classList.toggle("selected", parseInt(el.dataset.id) === id);
+      });
+    }
+
+    async function saveProduct(e) {
+      e.preventDefault();
+      const id = document.getElementById("prodId").value;
+      const body = {
+        code: document.getElementById("prodCode").value,
+        name: document.getElementById("prodName").value,
+        category: document.getElementById("prodCategory").value,
+        size: document.getElementById("prodSize").value || null,
+        color: document.getElementById("prodColor").value || null,
+        price: parseFloat(document.getElementById("prodPrice").value) || 0,
+        shelf_position: document.getElementById("prodShelf").value || null,
+        zone_id: window.__pickedZone || null,
+      };
+      try {
+        if (id) {
+          await api(`/api/products/${body.code}`, { method: "PUT", body: JSON.stringify(body) });
+        } else {
+          await api("/api/products", { method: "POST", body: JSON.stringify(body) });
+        }
+        closeProductModal();
+        await loadData();
+        renderSearch();
+        renderMap();
+      } catch (err) { alert("Error guardando producto"); }
+    }
+
+    function closeProductModal() {
+      document.getElementById("overlayProduct").style.display = "none";
+      window.__pickedZone = null;
     }
 
     async function apiFetch(path, opts) {
@@ -327,7 +660,7 @@
       return r.json();
     }
 
-    // ---------- PWA install prompt ----------
+    // ---------- PWA install ----------
     let deferredPrompt;
     window.addEventListener("beforeinstallprompt", (e) => {
       e.preventDefault();
@@ -336,9 +669,7 @@
       btn.textContent = "Instalar app";
       btn.className = "btn";
       btn.style.position = "fixed"; btn.style.bottom = "20px"; btn.style.right = "16px"; btn.style.zIndex = "1000";
-      btn.onclick = async () => {
-        if (deferredPrompt) { deferredPrompt.prompt(); const res = await deferredPrompt.userChoice; deferredPrompt = null; btn.remove(); }
-      };
+      btn.onclick = async () => { if (deferredPrompt) { deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; btn.remove(); } };
       document.body.appendChild(btn);
     });
 
