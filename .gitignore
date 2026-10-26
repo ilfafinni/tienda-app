@@ -7,3 +7,4 @@ ios/
 *.apk
 *.aab
 test-pkg.json
+.vercel

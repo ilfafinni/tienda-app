@@ -8,6 +8,7 @@
   <title>Mi Tienda - Mapa, búsqueda y escaneo</title>
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #f8fafc; color: #1e293b; }
@@ -52,10 +53,12 @@
     .btn.secondary { background: #f1f5f9; color: #475569; }
     .btn:disabled { opacity: .5; cursor: not-allowed; }
     /* scanner */
-    .scan-box { background: #fff; border-radius: 16px; padding: 24px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-    .scan-box .big { font-size: 48px; margin-bottom: 16px; }
-    .scan-box input { width: 80%; max-width: 300px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 16px; text-align: center; margin-bottom: 16px; }
-    .result-card { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 16px; margin-top: 16px; text-align: left; }
+    .scan-box { background: #fff; border-radius: 16px; padding: 16px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .scan-box .big { font-size: 48px; margin-bottom: 12px; }
+    .scan-box input { width: 85%; max-width: 320px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 16px; text-align: center; margin-bottom: 12px; }
+    .camera-box { border: 2px dashed #cbd5e1; border-radius: 12px; background: #000; margin: 12px 0; display: none; }
+    .camera-controls { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
+    .result-card { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 16px; margin-top: 16px; text-align: left; display: none; }
     .result-card .t { font-weight: 800; font-size: 17px; margin-bottom: 6px; }
     .result-card .m { font-size: 13px; color: #475569; margin: 2px 0; }
     .result-card .zone { color: #3b82f6; font-weight: 700; }
@@ -120,11 +123,16 @@
       <!-- Scan -->
       <section class="screen" id="screenScan">
         <div class="title">📷 Escanear producto</div>
-        <div class="subtitle">En web escribe o escanea el código del producto</div>
+        <div class="subtitle">Apunta la cámara al código de barras del producto</div>
         <div class="scan-box">
           <div class="big">📦</div>
-          <input id="inpScan" placeholder="Código del producto (ej: PNT-001)" autocomplete="off">
-          <div class="result-card" id="cardResult" style="display:none;"></div>
+          <div id="cameraBox" class="camera-box"></div>
+          <div class="camera-controls">
+            <button class="btn" id="btnStartCam" onclick="toggleCamera()">Iniciar cámara</button>
+            <button class="btn secondary" onclick="stopCamera()">Detener</button>
+          </div>
+          <input id="inpScan" placeholder="O escribe el código manualmente (ej: PNT-001)" autocomplete="off">
+          <div class="result-card" id="cardResult"></div>
           <div id="scanError" class="error"></div>
         </div>
         <div class="map-controls" style="justify-content:center;">
@@ -152,7 +160,7 @@
       document.getElementById("hTitle").textContent =
         { home: "Mi Tienda", map: "Mapa de la tienda", search: "Buscar producto", scan: "Escanear producto" }[screen];
       if (screen === "map") renderMap();
-      if (screen === "scan") { document.getElementById("inpScan").value = ""; document.getElementById("cardResult").style.display = "none"; document.getElementById("scanError").textContent = ""; }
+      if (screen === "scan") { stopCamera(); document.getElementById("inpScan").value = ""; document.getElementById("cardResult").style.display = "none"; document.getElementById("scanError").textContent = ""; }
     }
 
     function goBack() { show("home"); }
@@ -233,9 +241,64 @@
     }
 
     // ---------- SCAN ----------
+    let qrScanner = null;
+    let cameraActive = false;
+
     document.getElementById("inpScan").addEventListener("keydown", async (e) => {
       if (e.key !== "Enter") return;
       const code = document.getElementById("inpScan").value.trim();
+      if (!code) return;
+      await processScannedCode(code);
+    });
+
+    async function toggleCamera() {
+      if (cameraActive) { stopCamera(); return; }
+      const box = document.getElementById("cameraBox");
+      const btn = document.getElementById("btnStartCam");
+      box.style.display = "block";
+      btn.textContent = "Cargando cámara…";
+      btn.disabled = true;
+      try {
+        qrScanner = new Html5Qrcode("cameraBox");
+        await qrScanner.start(
+          { facingMode: "environment" }, // cámara trasera en móvil
+          { fps: 10, qrbox: 250 },
+          (decodedText) => {
+            // Se detectó un código de barras/QR
+            stopCamera();
+            document.getElementById("inpScan").value = decodedText;
+            processScannedCode(decodedText);
+          },
+          (errorMessage) => {
+            // errores de escaneo continuo se ignoran
+          }
+        );
+        cameraActive = true;
+        btn.textContent = "Usar cámara trasera";
+        btn.disabled = false;
+      } catch (err) {
+        console.error(err);
+        box.style.display = "none";
+        document.getElementById("scanError").textContent = "No se pudo acceder a la cámara. Asegúrate de permitir el uso de la cámara y usa HTTPS o localhost.";
+        btn.textContent = "Iniciar cámara";
+        btn.disabled = false;
+      }
+    }
+
+    function stopCamera() {
+      if (qrScanner && cameraActive) {
+        qrScanner.stop().then(() => {
+          qrScanner.clear();
+          cameraActive = false;
+        }).catch(() => {});
+      }
+      cameraActive = false;
+      const btn = document.getElementById("btnStartCam");
+      if (btn) { btn.textContent = "Iniciar cámara"; btn.disabled = false; }
+      document.getElementById("cameraBox").style.display = "none";
+    }
+
+    async function processScannedCode(code) {
       if (!code) return;
       document.getElementById("scanError").textContent = "";
       document.getElementById("cardResult").style.display = "none";
@@ -256,7 +319,7 @@
       } catch (err) {
         document.getElementById("scanError").textContent = 'Producto "' + code + '" no encontrado.';
       }
-    });
+    }
 
     async function apiFetch(path, opts) {
       const r = await fetch(`${API}${path}`, Object.assign({ headers: { "Content-Type": "application/json" } }, opts));
