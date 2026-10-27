@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   SafeAreaView,
   View,
@@ -14,7 +14,7 @@ import {
   Modal,
   Keyboard,
 } from "react-native";
-import { Svg, Rect, Text as SvgText, Circle } from "react-native-svg";
+import { Svg, Rect, Text as SvgText, Circle, Path } from "react-native-svg";
 
 import {
   getZones,
@@ -22,6 +22,7 @@ import {
   createZone,
   updateZone,
   deleteZone,
+  assignProductToZone,
 } from "../api";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -35,7 +36,20 @@ const TYPE_LABELS = {
   entrada: "Entrada",
 };
 
-export default function MapScreen({ navigation }) {
+const FLOOR_LABELS = {
+  1: "Piso 1",
+  2: "Piso 2",
+  3: "Piso 3",
+  4: "Piso 4",
+  "all": "Planta completa",
+};
+
+export default function MapScreen({ navigation, route }) {
+  const {
+    initialZoneId,
+    initialProductCode,
+  } = route.params || {};
+
   const [zones, setZones] = useState([]);
   const [products, setProducts] = useState([]);
   const [selectedZone, setSelectedZone] = useState(null);
@@ -51,7 +65,14 @@ export default function MapScreen({ navigation }) {
     w: 120,
     h: 100,
     color: "#3b82f6",
+    floor: 1,
   });
+
+  const [activeFloor, setActiveFloor] = useState("all"); // "all" | number
+  const [focusZoneId, setFocusZoneId] = useState(null);
+  const [drawing, setDrawing] = useState(false);
+  const [drawStart, setDrawStart] = useState(null); // {x, y} en viewBox coords
+  const [drawCurrent, setDrawCurrent] = useState(null); // {x, y} en viewBox coords
 
   useEffect(() => {
     loadData();
@@ -65,11 +86,36 @@ export default function MapScreen({ navigation }) {
       const [zRes, pRes] = await Promise.all([getZones(), getProducts()]);
 
       if (!zRes.ok || !pRes.ok) {
-        throw new Error(zRes.error || pRes.error || "Error cargando datos");
+        throw new Error(
+          zRes.error || pRes.error || "Error cargando datos"
+        );
       }
 
       setZones(zRes.data);
       setProducts(pRes.data);
+
+      // Si hay initialZoneId, seleccionar esa zona después de cargar datos
+      if (initialZoneId) {
+        const zone = zRes.data.find((z) => z.id == initialZoneId);
+        if (zone) {
+          setSelectedZone(zone);
+          setActiveFloor(zone.floor);
+          setFocusZoneId(zone.id);
+        }
+      }
+
+      // Si hay initialProductCode pero no zone_id, buscar la zona del producto
+      if (initialProductCode && !initialZoneId) {
+        const product = pRes.data.find((p) => p.code === initialProductCode);
+        if (product && product.zone_id) {
+          const zone = zRes.data.find((z) => z.id == product.zone_id);
+          if (zone) {
+            setSelectedZone(zone);
+            setActiveFloor(zone.floor);
+            setFocusZoneId(zone.id);
+          }
+        }
+      }
     } catch (err) {
       setError(
         err.message || "No se pudo conectar con el servidor. ¿Está en línea?"
@@ -80,6 +126,12 @@ export default function MapScreen({ navigation }) {
     }
   };
 
+  // Filtrar zonas por piso activo
+  const visibleZones = activeFloor === "all"
+    ? zones
+    : zones.filter((z) => z.floor === Number(activeFloor));
+
+  // Productos en zona visible
   const productsInZone = (zoneId) =>
     products.filter((p) => p.zone_id === zoneId);
 
@@ -94,12 +146,131 @@ export default function MapScreen({ navigation }) {
     return map[type] || "#94a3b8";
   };
 
-  const addZone = async () => {
+  // Convertir coordenadas de pantalla a viewBox (aproximado)
+  const screenToViewBox = useCallback(
+    (screenX, screenY) => {
+      // Área del mapa: el SVG está en mapContainer con margin y el contenedor padre
+      // viewBox es 1000x1000, pantalla completa menos header/bottom panel
+      // Aproximado: mapeamos pantalla a viewBox restando offsets conocidos
+      const mapLeft = 12; // margin horizontal del mapContainer
+      const mapTop = 12; // margen superior (StatusBar + header)
+      const mapWidth = SCREEN_WIDTH - 24;
+      const mapHeight = SCREEN_HEIGHT - 160; // dejar espacio para bottom panel approx
+
+      // Si el SVG tiene width/height 100% y viewBox 1000x1000
+      const ratioX = 1000 / mapWidth;
+      const ratioY = 1000 / mapHeight;
+
+      const vbX = (screenX - mapLeft) * ratioX;
+      const vbY = (screenY - mapTop) * ratioY;
+
+      // Clamping a viewBox
+      const clampedX = Math.max(0, Math.min(1000, vbX));
+      const clampedY = Math.max(0, Math.min(1000, vbY));
+
+      return { x: clampedX, y: clampedY };
+    },
+    [SCREEN_WIDTH, SCREEN_HEIGHT]
+  );
+
+  const productsInZoneSelected = selectedZone
+    ? productsInZone(selectedZone.id)
+    : [];
+
+  // Handler de toque en el SVG para seleccionar zona o iniciar dibujo
+  const handleMapPress = useCallback(
+    (event) => {
+      if (drawing && drawStart) {
+        // Modo dibujo: actualizar punto current mientras arrastramos
+        const pt = screenToViewBox(
+          event.nativeEvent?.location?.x ?? event.nativeEvent?.x ?? 0,
+          event.nativeEvent?.location?.y ?? event.nativeEvent?.y ?? 0
+        );
+        setDrawCurrent(pt);
+      } else {
+        // Modo normal: intentar seleccionar una zona tocada
+        const touchLoc = screenToViewBox(
+          event.nativeEvent?.location?.x ?? event.nativeEvent?.x ?? 0,
+          event.nativeEvent?.location?.y ?? event.nativeEvent?.y ?? 0
+        );
+
+        const hitZone = visibleZones.find((z) => {
+          return (
+            touchLoc.x >= z.x &&
+            touchLoc.x <= z.x + z.w &&
+            touchLoc.y >= z.y &&
+            touchLoc.y <= z.y + z.h
+          );
+        });
+
+        if (hitZone) {
+          setSelectedZone(hitZone);
+          setFocusZoneId(hitZone.id);
+          setActiveFloor(hitZone.floor);
+        } else {
+          // Tocar en área vacía - iniciar modo dibujo
+          setDrawing(true);
+          setDrawStart(touchLoc);
+        }
+      }
+    },
+    [drawing, drawStart, visibleZones, screenToViewBox]
+  );
+
+  // Cuando el usuario suelta el toque después de iniciar dibujo
+  const handleMapRelease = useCallback(
+    () => {
+      if (drawing && drawStart) {
+        // Cerrar dibujo y crear zona con las coordenadas
+        const x1 = drawStart.x;
+        const y1 = drawStart.y;
+        const x2 = drawCurrent?.x ?? drawStart.x;
+        const y2 = drawCurrent?.y ?? drawStart.y;
+
+        const newX = Math.min(x1, x2);
+        const newY = Math.min(y1, y2);
+        const newW = Math.max(Math.abs(x1 - x2), 50); // mínimo 50
+        const newH = Math.max(Math.abs(y1 - y2), 50); // mínimo 50
+
+        setNewZone({
+          name: "Nuevo mueble",
+          type: "floorstand",
+          x: newX,
+          y: newY,
+          w: newW,
+          h: newH,
+          color: "#3b82f6",
+          floor: Number(activeFloor) || 1,
+        });
+        setShowAddModal(true);
+        setDrawing(false);
+        setDrawStart(null);
+        setDrawCurrent(null);
+      } else {
+        setDrawing(false);
+        setDrawStart(null);
+        setDrawCurrent(null);
+      }
+    },
+    [drawing, drawStart, drawCurrent, activeFloor, setNewZone, setShowAddModal]
+  );
+
+  // Limpiar drawCurrent al salir del modal o cancelar
+  useEffect(() => {
+    if (!showAddModal) {
+      setDrawing(false);
+      setDrawStart(null);
+      setDrawCurrent(null);
+    }
+  }, [showAddModal]);
+
+  // Actualizar zona cuando se guarda un nuevo mueble
+  const handleZoneSave = async (zoneData) => {
     try {
-      const res = await createZone(newZone);
+      const res = await createZone(zoneData);
       if (!res.ok) throw new Error(res.error || "Error creando mueble");
 
-      setZones([...zones, res.data]);
+      setZones((prev) => [...prev, res.data]);
       setShowAddModal(false);
       setNewZone({
         name: "",
@@ -109,27 +280,30 @@ export default function MapScreen({ navigation }) {
         w: 120,
         h: 100,
         color: "#3b82f6",
+        floor: 1,
       });
     } catch (err) {
       Alert.alert("Error", err.message || "No se pudo crear el mueble");
     }
   };
 
-  const updateZoneData = async (zone, updates) => {
+  // Actualizar zona existente
+  const handleZoneUpdate = async (zoneId, updates) => {
     try {
-      const res = await updateZone(zone.id, updates);
+      const res = await updateZone(zoneId, updates);
       if (!res.ok) throw new Error(res.error || "Error actualizando mueble");
 
       setZones((prev) =>
         prev.map((z) => (z.id === zone.id ? res.data : z))
       );
-      if (selectedZone?.id === zone.id) setSelectedZone(res.data);
+      if (selectedZone?.id === zoneId) setSelectedZone(res.data);
     } catch (err) {
       Alert.alert("Error", err.message || "No se pudo actualizar el mueble");
     }
   };
 
-  const deleteZoneData = async (zone) => {
+  // Eliminar zona
+  const handleZoneDelete = async (zone) => {
     const confirm = await Alert.alert(
       "Eliminar mueble",
       `¿Eliminar "${zone.name}"? Los productos de esta zona se desasignarán.`,
@@ -145,6 +319,7 @@ export default function MapScreen({ navigation }) {
 
               setZones((prev) => prev.filter((z) => z.id !== zone.id));
               if (selectedZone?.id === zone.id) setSelectedZone(null);
+              setFocusZoneId(null);
             } catch (err) {
               Alert.alert("Error", err.message || "No se pudo eliminar");
             }
@@ -154,7 +329,49 @@ export default function MapScreen({ navigation }) {
     );
   };
 
-  const toggleEditing = () => setEditing(!editing);
+  // Abrir modal para cambiar mueble de un producto
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assignProductCode, setAssignProductCode] = useState("");
+  const [assignToZoneId, setAssignToZoneId] = useState(null);
+
+  const openAssignModal = (productCode, currentZoneId) => {
+    setAssignProductCode(productCode);
+    // Cargar todas las zonas excepto la actual
+    const otherZones = zones.filter((z) => z.id !== currentZoneId);
+    if (otherZones.length > 0) {
+      setAssignToZoneId(otherZones[0].id);
+    } else {
+      setAssignToZoneId(null);
+    }
+    setShowAssignModal(true);
+  };
+
+  const closeAssignModal = () => {
+    setShowAssignModal(false);
+    setAssignProductCode("");
+    setAssignToZoneId(null);
+  };
+
+  const confirmAssignProduct = async () => {
+    if (!assignProductCode || assignToZoneId === null) return;
+    try {
+      const res = await assignProductToZone(assignProductCode, assignToZoneId);
+      if (!res.ok) throw new Error(res.error || "Error asignando producto");
+
+      // Actualizar productos localmente
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.code === assignProductCode
+            ? { ...p, zone_id: assignToZoneId, zone_name: zones.find(z => z.id === assignToZoneId)?.name || null, zone_type: zones.find(z => z.id === assignToZoneId)?.type || null }
+            : p
+        )
+      );
+
+      closeAssignModal();
+    } catch (err) {
+      Alert.alert("Error", err.message || "No se pudo asignar el producto");
+    }
+  };
 
   if (loading) {
     return (
@@ -182,7 +399,12 @@ export default function MapScreen({ navigation }) {
     );
   }
 
-  const zoneProducts = selectedZone ? productsInZone(selectedZone.id) : [];
+  const productsInZoneSelected = selectedZone
+    ? productsInZone(selectedZone.id)
+    : [];
+
+  // Determinar si estamos enfocados en un producto específico
+  const isProductFocus = !!initialProductCode && !initialZoneId;
 
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
@@ -202,13 +424,67 @@ export default function MapScreen({ navigation }) {
             <Text style={styles.editText}>✏ Editar muebles</Text>
           </TouchableOpacity>
         )}
+        {/* selector de pisos */}
+        {visibleZones.length > 1 && (
+          <View style={styles.floorSelector}>
+            {Object.entries(FLOOR_LABELS).map(([floor, label]) => (
+              <TouchableOpacity
+                key={floor}
+                style={[
+                  styles.floorChip,
+                  activeFloor == floor && styles.floorChipActive,
+                ]}
+                onPress={() => setActiveFloor(floor)}
+              >
+                <Text style={styles.floorChipText}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </View>
 
       <View style={styles.mapContainer}>
-        <Svg width="100%" height="100%" viewBox={MAP_VIEWBOX} style={styles.svg}>
-          {zones.map((zone) => {
+        <Svg
+          width="100%"
+          height="100%"
+          viewBox={MAP_VIEWBOX}
+          style={styles.svg}
+          onTouch={handleMapPress}
+          onTouchEnd={handleMapRelease}
+        >
+          {/* Dibujar zona de selección mientras se dibuja */}
+          {drawing && drawStart && (
+            <Rect
+              x={drawStart.x}
+              y={drawStart.y}
+              width={drawCurrent?.x > drawStart.x ? drawCurrent.x - drawStart.x : drawStart.x - drawCurrent.x}
+              height={drawCurrent?.y > drawStart.y ? drawCurrent.y - drawStart.y : drawStart.y - drawCurrent.y}
+              fill="rgba(168, 85, 247, 0.3)"
+              stroke="#a855f7"
+              strokeWidth={2}
+            />
+          )}
+
+          {/* Resaltar la zona focus (producto escaneado/buscado) */}
+          {focusZoneId && (
+            <Rect
+              x={zones.find(z) => z.id == focusZoneId}.x - 10}
+              y={zones.find(z) => z.id == focusZoneId}.y - 10}
+              width={zones.find(z) => z.id == focusZoneId}.w + 20}
+              height={zones.find(z) => z.id == focusZoneId}.h + 20}
+              fill="none"
+              stroke="#f59e0b"
+              strokeWidth={3}
+              strokeDasharray="5, 5"
+            />
+          )}
+
+          {visibleZones.map((zone) => {
             const isSelected = selectedZone?.id === zone.id;
             const zoneProds = productsInZone(zone.id);
+
             return (
               <TouchableOpacity
                 key={zone.id}
@@ -272,13 +548,46 @@ export default function MapScreen({ navigation }) {
               </TouchableOpacity>
             );
           })}
+
+          {/* Modo dibujo: mostrar rectángulo preview */}
+          {drawing && drawStart && drawCurrent && (
+            <Path
+              d={`
+                M ${drawStart.x} ${drawStart.y}
+                L ${drawCurrent.x} ${drawStart.y}
+                L ${drawCurrent.x} ${drawCurrent.y}
+                L ${drawStart.x} ${drawCurrent.y}
+                Z
+              `}
+              fill="rgba(168, 85, 247, 0.3)"
+              stroke="#a855f7"
+              strokeWidth={2}
+            />
+          )}
         </Svg>
 
         <View style={styles.legend}>
           {Object.entries(TYPE_LABELS).map(([type, label]) => (
             <View key={type} style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: zoneColor(type) }]} />
+              <View
+                style={[
+                  styles.legendDot,
+                  { backgroundColor: zoneColor(type) },
+                ]}
+              />
               <Text style={styles.legendText}>{label}</Text>
+            </View>
+          ))}
+          {/* Agregar entrada para piso actual */}
+          {activeFloor !== "all" && (
+            <View key="floor-active" style={styles.legendItem}>
+              <View
+                style={[
+                  styles.legendDot,
+                  { backgroundColor: zoneColor("floorstand") },
+                ]}
+              />
+              <Text style={styles.legendText}>{FLOOR_LABELS[activeFloor]}</Text>
             </View>
           ))}
         </View>
@@ -295,6 +604,7 @@ export default function MapScreen({ navigation }) {
                 w: 120,
                 h: 100,
                 color: "#3b82f6",
+                floor: Number(activeFloor) || 1,
               });
               setShowAddModal(true);
             }}
@@ -302,151 +612,232 @@ export default function MapScreen({ navigation }) {
             <Text style={styles.addButtonText}>+ Nuevo mueble</Text>
           </TouchableOpacity>
         )}
-      </View>
 
-      {selectedZone && (
-        <View style={styles.bottomPanel}>
-          <TouchableOpacity style={styles.closeButton} onPress={() => setSelectedZone(null)}>
-            <Text style={styles.closeText}>✕ Cerrar</Text>
-          </TouchableOpacity>
-          <View style={styles.panelHeader}>
-            <Text style={styles.panelTitle}>{selectedZone.name}</Text>
-            <Text style={styles.panelSubtitle}>
-              {TYPE_LABELS[selectedZone.type] || selectedZone.type} •
-              {zoneProducts.length} producto(s)
+        {/* Panel inferior: zona seleccionada */}
+        {selectedZone && (
+          <View style={styles.bottomPanel}>
+            <TouchableOpacity style={styles.closeButton} onPress={() => setSelectedZone(null)}>
+              <Text style={styles.closeText}>✕ Cerrar</Text>
+            </TouchableOpacity>
+            <View style={styles.panelHeader}>
+              <Text style={styles.panelTitle}>
+                {selectedZone.name}
+              </Text>
+              <Text style={styles.panelSubtitle}>
+                {TYPE_LABELS[selectedZone.type] || selectedZone.type} •
+                {zoneProducts.length} producto(s)
+              </Text>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.scrollContent}
+            >
+              {zoneProducts.length === 0 ? (
+                <Text style={styles.emptyZone}>No hay productos asignados en este mueble.</Text>
+              ) : (
+                zoneProducts.map((p) => (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={styles.productRow}
+                  >
+                    <View style={styles.productInfo}>
+                      <Text style={styles.productCode}>{p.code}</Text>
+                      <Text style={styles.productName}>{p.name}</Text>
+                      <Text style={styles.productDetail}>
+                        {p.category} • {p.size || "-"} • {p.color || "-"}
+                      </Text>
+                    </View>
+                    <Text style={styles.productPrice}>
+                      ${p.price ? p.price.toLocaleString() : "-"}
+                    </Text>
+                    {/* Botón "Cambiar mueble" en cada producto */}
+                    {zoneProducts.length > 0 && (
+                      <TouchableOpacity
+                        style={styles.changeZoneButton}
+                        onPress={() => openAssignModal(p.code, selectedZone.id)}
+                      >
+                        <Text style={styles.changeZoneButtonText}>
+                          Cambiar mueble
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
+
+            {/* Modal para cambiar mueble de producto */}
+            {showAssignModal && (
+              <Modal
+                visible={showAssignModal}
+                transparent={true}
+                onRequestClose={closeAssignModal}
+              >
+                <View style={styles.modalBackdrop} onTouchEnd={closeAssignModal}>
+                  <View style={styles.modalContent}>
+                    <Text style={styles.modalTitle}>Cambiar mueble</Text>
+                    <Text style={styles.modalLabel}>Producto</Text>
+                    <Text style={styles.modalInputSmall} readOnly>
+                      {assignProductCode}
+                    </Text>
+                    <Text style={styles.modalLabel}>Nueva ubicación</Text>
+                    <View style={styles.typeSelector}>
+                      {zones.map((z) => (
+                        <TouchableOpacity
+                          key={z.id}
+                          style={[
+                            styles.typeChip,
+                            assignToZoneId === z.id && styles.typeChipActive,
+                          ]}
+                          onPress={() => setAssignToZoneId(z.id)}
+                        >
+                          <Text style={[
+                            styles.typeChipText,
+                            assignToZoneId === z.id && styles.typeChipTextActive,
+                          ]}>
+                            {z.name}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    <View style={styles.modalActions}>
+                      <TouchableOpacity style={styles.modalCancel} onPress={closeAssignModal}>
+                        <Text style={styles.modalCancelText}>Cancelar</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.modalSave} onPress={confirmAssignProduct}>
+                        <Text style={styles.modalSaveText}>Asignar</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              </Modal>
+            )}
+
+            {/* Modal para añadir nuevo mueble (reutilizado) */}
+            {showAddModal && (
+              <Modal
+                visible={showAddModal}
+                transparent={true}
+                onRequestClose={() => setShowAddModal(false)}
+              >
+                <View style={styles.modalBackdrop} onTouchEnd={() => setShowAddModal(false)}>
+                  <View style={styles.modalContent}>
+                    <Text style={styles.modalTitle}>Nuevo mueble</Text>
+                    <ScrollView contentContainerStyle={styles.modalScroll}>
+                      <Text style={styles.modalLabel}>Nombre</Text>
+                      <TextInput
+                        style={styles.modalInput}
+                        value={newZone.name}
+                        onChangeText={(t) =>
+                          setNewZone({ ...newZone, name: t })
+                        }
+                        placeholder="Ej: Floorstand B"
+                      />
+                      <Text style={styles.modalLabel}>Tipo</Text>
+                      <View style={styles.typeSelector}>
+                        {Object.entries(TYPE_LABELS).map(([type, label]) => (
+                          <TouchableOpacity
+                            key={type}
+                            style={[
+                              styles.typeChip,
+                              newZone.type === type && styles.typeChipActive,
+                            ]}
+                            onPress={() => setNewZone({ ...newZone, type })}
+                          >
+                            <Text style={[styles.typeChipText, newZone.type === type && styles.typeChipTextActive]}>
+                              {label}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                      <Text style={styles.modalLabel}>Color</Text>
+                      <View style={styles.colorSelector}>
+                        {["#3b82f6", "#10b981", "#6366f1", "#8b5cf6", "#ef4444", "#f59e0b", "#94a3b8"].map(
+                          (color) => (
+                            <TouchableOpacity
+                              key={color}
+                              style={[
+                                styles.colorChip,
+                                newZone.color === color && styles.colorChipActive,
+                                { backgroundColor: color },
+                              ]}
+                              onPress={() => setNewZone({ ...newZone, color })}
+                            />
+                          )
+                        )}
+                      </View>
+                      <View style={styles.modalFields}>
+                        <View style={styles.modalField}>
+                          <Text style={styles.modalLabelSmall}>X</Text>
+                          <TextInput
+                            style={styles.modalInputSmall}
+                            value={String(newZone.x)}
+                            onChangeText={(t) =>
+                              setNewZone({ ...newZone, x: parseInt(t) || 0 })
+                            }
+                            keyboardType="numeric"
+                          />
+                        </View>
+                        <View style={styles.modalField}>
+                          <Text style={styles.modalLabelSmall}>Y</Text>
+                          <TextInput
+                            style={styles.modalInputSmall}
+                            value={String(newZone.y)}
+                            onChangeText={(t) =>
+                              setNewZone({ ...newZone, y: parseInt(t) || 0 })
+                            }
+                            keyboardType="numeric"
+                          />
+                        </View>
+                        <View style={styles.modalField}>
+                          <Text style={styles.modalLabelSmall}>Ancho</Text>
+                          <TextInput
+                            style={styles.modalInputSmall}
+                            value={String(newZone.w)}
+                            onChangeText={(t) =>
+                              setNewZone({ ...newZone, w: parseInt(t) || 50 })
+                            }
+                            keyboardType="numeric"
+                          />
+                        </View>
+                        <View style={styles.modalField}>
+                          <Text style={styles.modalLabelSmall}>Alto</Text>
+                          <TextInput
+                            style={styles.modalInputSmall}
+                            value={String(newZone.h)}
+                            onChangeText={(t) =>
+                              setNewZone({ ...newZone, h: parseInt(t) || 50 })
+                            }
+                            keyboardType="numeric"
+                          />
+                        </View>
+                      </View>
+                    </ScrollView>
+                    <View style={styles.modalActions}>
+                      <TouchableOpacity style={styles.modalCancel} onPress={() => setShowAddModal(false)}>
+                        <Text style={styles.modalCancelText}>Cancelar</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.modalSave} onPress={() => handleZoneSave(newZone)}>
+                        <Text style={styles.modalSaveText}>Guardar mueble</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              </Modal>
+            )}
+          </View>
+        )}
+
+        {/* Si hay producto focalizado pero no hay zona seleccionada, mostrar info */}
+        {!selectedZone && initialProductCode && (
+          <View style={styles.noZoneInfo}>
+            <Text style={styles.noZoneText}>
+              El producto {initialProductCode} no tiene zona asignada en el mapa
             </Text>
           </View>
-
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent}
-          >
-            {zoneProducts.length === 0 ? (
-              <Text style={styles.emptyZone}>No hay productos asignados en este mueble.</Text>
-            ) : (
-              zoneProducts.map((p) => (
-                <TouchableOpacity
-                  key={p.id}
-                  style={styles.productRow}
-                >
-                  <View style={styles.productInfo}>
-                    <Text style={styles.productCode}>{p.code}</Text>
-                    <Text style={styles.productName}>{p.name}</Text>
-                    <Text style={styles.productDetail}>
-                      {p.category} • {p.size || "-"} • {p.color || "-"}
-                    </Text>
-                  </View>
-                  <Text style={styles.productPrice}>
-                    ${p.price ? p.price.toLocaleString() : "-"}
-                  </Text>
-                </TouchableOpacity>
-              ))
-            )}
-          </ScrollView>
-        </View>
-      )}
-
-      <Modal visible={showAddModal} transparent={true} onRequestClose={() => setShowAddModal(false)}>
-        <View style={styles.modalBackdrop} onTouchEnd={() => setShowAddModal(false)}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Nuevo mueble</Text>
-            <ScrollView contentContainerStyle={styles.modalScroll}>
-              <Text style={styles.modalLabel}>Nombre</Text>
-              <TextInput
-                style={styles.modalInput}
-                value={newZone.name}
-                onChangeText={(t) => setNewZone({ ...newZone, name: t })}
-                placeholder="Ej: Floorstand B"
-              />
-              <Text style={styles.modalLabel}>Tipo</Text>
-              <View style={styles.typeSelector}>
-                {Object.entries(TYPE_LABELS).map(([type, label]) => (
-                  <TouchableOpacity
-                    key={type}
-                    style={[
-                      styles.typeChip,
-                      newZone.type === type && styles.typeChipActive,
-                    ]}
-                    onPress={() => setNewZone({ ...newZone, type })}
-                  >
-                    <Text style={[styles.typeChipText, newZone.type === type && styles.typeChipTextActive]}>
-                      {label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <Text style={styles.modalLabel}>Color</Text>
-              <View style={styles.colorSelector}>
-                {["#3b82f6", "#10b981", "#6366f1", "#8b5cf6", "#ef4444", "#f59e0b", "#94a3b8"].map(
-                  (color) => (
-                    <TouchableOpacity
-                      key={color}
-                      style={[
-                        styles.colorChip,
-                        newZone.color === color && styles.colorChipActive,
-                        { backgroundColor: color },
-                      ]}
-                      onPress={() => setNewZone({ ...newZone, color })}
-                    />
-                  )
-                )}
-              </View>
-              <View style={styles.modalFields}>
-                <View style={styles.modalField}>
-                  <Text style={styles.modalLabelSmall}>X</Text>
-                  <TextInput
-                    style={styles.modalInputSmall}
-                    value={String(newZone.x)}
-                    onChangeText={(t) => setNewZone({ ...newZone, x: parseInt(t) || 0 })}
-                    keyboardType="numeric"
-                  />
-                </View>
-                <View style={styles.modalField}>
-                  <Text style={styles.modalLabelSmall}>Y</Text>
-                  <TextInput
-                    style={styles.modalInputSmall}
-                    value={String(newZone.y)}
-                    onChangeText={(t) => setNewZone({ ...newZone, y: parseInt(t) || 0 })}
-                    keyboardType="numeric"
-                  />
-                </View>
-                <View style={styles.modalField}>
-                  <Text style={styles.modalLabelSmall}>Ancho</Text>
-                  <TextInput
-                    style={styles.modalInputSmall}
-                    value={String(newZone.w)}
-                    onChangeText={(t) => setNewZone({ ...newZone, w: parseInt(t) || 50 })}
-                    keyboardType="numeric"
-                  />
-                </View>
-                <View style={styles.modalField}>
-                  <Text style={styles.modalLabelSmall}>Alto</Text>
-                  <TextInput
-                    style={styles.modalInputSmall}
-                    value={String(newZone.h)}
-                    onChangeText={(t) => setNewZone({ ...newZone, h: parseInt(t) || 50 })}
-                    keyboardType="numeric"
-                  />
-                </View>
-              </View>
-            </ScrollView>
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowAddModal(false)}>
-                <Text style={styles.modalCancelText}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.modalSave} onPress={addZone}>
-                <Text style={styles.modalSaveText}>Guardar mueble</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {editing && (
-        <View style={styles.editingBadge}>
-          <Text style={styles.editingText}>Modo edición: configura los muebles</Text>
-        </View>
-      )}
+        )}
+      </SafeAreaView>
     </SafeAreaView>
   );
 }
@@ -810,6 +1201,7 @@ const styles = StyleSheet.create({
   modalCancelText: {
     color: "#64748b",
     fontWeight: "600",
+    fontSize: 13,
   },
   modalSave: {
     paddingHorizontal: 24,
@@ -820,5 +1212,51 @@ const styles = StyleSheet.create({
   modalSaveText: {
     color: "#ffffff",
     fontWeight: "bold",
+    fontSize: 13,
+  },
+  noZoneInfo: {
+    padding: 20,
+    alignItems: "center",
+    marginTop: 40,
+  },
+  noZoneText: {
+    color: "#64748b",
+    fontSize: 16,
+    textAlign: "center",
+  },
+  floorSelector: {
+    flexDirection: "row",
+    gap: 6,
+    marginHorizontal: 16,
+    marginBottom: 8,
+  },
+  floorChip: {
+    backgroundColor: "#e2e8f0",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+  },
+  floorChipActive: {
+    backgroundColor: "#3b82f6",
+    borderColor: "#3b82f6",
+  },
+  floorChipText: {
+    fontSize: 11,
+    color: "#475569",
+    fontWeight: "600",
+  },
+  changeZoneButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: "#f3f4f6",
+    borderRadius: 6,
+    marginTop: 6,
+  },
+  changeZoneButtonText: {
+    fontSize: 12,
+    color: "#64748b",
+    fontWeight: "500",
   },
 });

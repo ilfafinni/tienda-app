@@ -66,7 +66,7 @@ export default function ScannerScreen({ navigation }) {
 
   const goToMap = () => {
     if (productResult?.zone_id != null) {
-      navigation.navigate("Map");
+      navigation.navigate("Map", { initialZoneId: productResult.zone_id, initialProductCode: productResult.code });
     } else {
       Alert.alert("Sin ubicación", "Este producto no tiene zona asignada en el mapa.");
     }

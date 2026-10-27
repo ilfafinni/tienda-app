@@ -123,7 +123,7 @@ export default function SearchScreen({ navigation }) {
       Alert.alert("Sin ubicación", "Este producto no tiene una zona asignada en el mapa.");
       return;
     }
-    navigation.navigate("Map");
+    navigation.navigate("Map", { initialZoneId: p.zone_id, initialProductCode: p.code });
   }
 }
 
