@@ -1,15 +1,15 @@
 {
-  "version": 2,
-  "routes": [
-    { "src": "/manifest.json", "dest": "/web/manifest.json" },
-    { "src": "/favicon.svg", "dest": "/web/favicon.svg" },
-    { "src": "/(.*)", "dest": "/web/index.html" }
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/manifest.json", "destination": "/web/manifest.json" },
+    { "source": "/favicon.svg", "destination": "/web/favicon.svg" },
+    { "source": "/(.*)", "destination": "/web/index.html" }
   ],
   "headers": [
     {
-      "source": "/web/manifest.json",
+      "source": "/(.*)",
       "headers": [
-        { "key": "Content-Type", "value": "application/manifest+json" }
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
       ]
     }
   ]
