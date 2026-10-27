@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   SafeAreaView,
   View,
@@ -12,9 +12,8 @@ import {
   ActivityIndicator,
   TextInput,
   Modal,
-  Keyboard,
 } from "react-native";
-import { Svg, Rect, Text as SvgText, Circle, Path } from "react-native-svg";
+import { Svg, Rect, Text as SvgText, Circle, Path, G, Defs, Pattern } from "react-native-svg";
 
 import {
   getZones,
@@ -26,53 +25,64 @@ import {
 } from "../api";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-const MAP_VIEWBOX = "0 0 1000 1000";
+const MAP_WIDTH = 1000;
+const MAP_HEIGHT = 800;
+const MAP_VIEWBOX = `0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`;
 
 const TYPE_LABELS = {
-  floorstand: "Floorstand",
+  floorstand: "Perchero / Floorstand",
   mesa: "Mesa",
   pared: "Pared",
   estante: "Estante",
+  probadores: "Probadores",
+  caja: "Caja",
   entrada: "Entrada",
 };
 
 const FLOOR_LABELS = {
+  all: "Planta completa",
   1: "Piso 1",
   2: "Piso 2",
   3: "Piso 3",
-  4: "Piso 4",
-  "all": "Planta completa",
 };
 
 export default function MapScreen({ navigation, route }) {
-  const {
-    initialZoneId,
-    initialProductCode,
-  } = route.params || {};
+  const { initialZoneId, initialProductCode } = route.params || {};
 
   const [zones, setZones] = useState([]);
   const [products, setProducts] = useState([]);
   const [selectedZone, setSelectedZone] = useState(null);
   const [editing, setEditing] = useState(false);
+  const [editMode, setEditMode] = useState("move"); // "move" | "draw"
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newZone, setNewZone] = useState({
+
+  const [activeFloor, setActiveFloor] = useState("all");
+  const [focusZoneId, setFocusZoneId] = useState(null);
+
+  // Drawing state
+  const [drawing, setDrawing] = useState(false);
+  const [drawStart, setDrawStart] = useState(null);
+  const [drawCurrent, setDrawCurrent] = useState(null);
+
+  // Modal: Add / Edit Zone
+  const [showZoneModal, setShowZoneModal] = useState(false);
+  const [zoneFormData, setZoneFormData] = useState({
+    id: null,
     name: "",
     type: "floorstand",
-    x: 150,
-    y: 150,
-    w: 120,
-    h: 100,
+    x: 200,
+    y: 200,
+    w: 160,
+    h: 120,
     color: "#3b82f6",
     floor: 1,
   });
 
-  const [activeFloor, setActiveFloor] = useState("all"); // "all" | number
-  const [focusZoneId, setFocusZoneId] = useState(null);
-  const [drawing, setDrawing] = useState(false);
-  const [drawStart, setDrawStart] = useState(null); // {x, y} en viewBox coords
-  const [drawCurrent, setDrawCurrent] = useState(null); // {x, y} en viewBox coords
+  // Modal: Change Zone of Product
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assignProductCode, setAssignProductCode] = useState("");
+  const [assignToZoneId, setAssignToZoneId] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -86,227 +96,185 @@ export default function MapScreen({ navigation, route }) {
       const [zRes, pRes] = await Promise.all([getZones(), getProducts()]);
 
       if (!zRes.ok || !pRes.ok) {
-        throw new Error(
-          zRes.error || pRes.error || "Error cargando datos"
-        );
+        throw new Error(zRes.error || pRes.error || "Error cargando datos del servidor");
       }
 
       setZones(zRes.data);
       setProducts(pRes.data);
 
-      // Si hay initialZoneId, seleccionar esa zona después de cargar datos
       if (initialZoneId) {
         const zone = zRes.data.find((z) => z.id == initialZoneId);
         if (zone) {
           setSelectedZone(zone);
-          setActiveFloor(zone.floor);
+          setActiveFloor(zone.floor || 1);
           setFocusZoneId(zone.id);
         }
-      }
-
-      // Si hay initialProductCode pero no zone_id, buscar la zona del producto
-      if (initialProductCode && !initialZoneId) {
+      } else if (initialProductCode) {
         const product = pRes.data.find((p) => p.code === initialProductCode);
         if (product && product.zone_id) {
           const zone = zRes.data.find((z) => z.id == product.zone_id);
           if (zone) {
             setSelectedZone(zone);
-            setActiveFloor(zone.floor);
+            setActiveFloor(zone.floor || 1);
             setFocusZoneId(zone.id);
           }
         }
       }
     } catch (err) {
-      setError(
-        err.message || "No se pudo conectar con el servidor. ¿Está en línea?"
-      );
-      console.error(err);
+      setError(err.message || "Error al conectar con el servidor.");
     } finally {
       setLoading(false);
     }
   };
 
-  // Filtrar zonas por piso activo
   const visibleZones = activeFloor === "all"
     ? zones
-    : zones.filter((z) => z.floor === Number(activeFloor));
+    : zones.filter((z) => (z.floor || 1) === Number(activeFloor));
 
-  // Productos en zona visible
   const productsInZone = (zoneId) =>
     products.filter((p) => p.zone_id === zoneId);
 
   const zoneColor = (type) => {
-    const map = {
-      floorstand: "#3b82f6",
-      mesa: "#10b981",
-      pared: "#6366f1",
-      estante: "#8b5cf6",
-      entrada: "#94a3b8",
-    };
-    return map[type] || "#94a3b8";
+    switch (type) {
+      case "floorstand": return "#3b82f6";
+      case "mesa": return "#10b981";
+      case "pared": return "#6366f1";
+      case "estante": return "#ef4444";
+      case "probadores": return "#f59e0b";
+      case "caja": return "#06b6d4";
+      case "entrada": return "#94a3b8";
+      default: return "#8b5cf6";
+    }
   };
 
-  // Convertir coordenadas de pantalla a viewBox (aproximado)
-  const screenToViewBox = useCallback(
-    (screenX, screenY) => {
-      // Área del mapa: el SVG está en mapContainer con margin y el contenedor padre
-      // viewBox es 1000x1000, pantalla completa menos header/bottom panel
-      // Aproximado: mapeamos pantalla a viewBox restando offsets conocidos
-      const mapLeft = 12; // margin horizontal del mapContainer
-      const mapTop = 12; // margen superior (StatusBar + header)
-      const mapWidth = SCREEN_WIDTH - 24;
-      const mapHeight = SCREEN_HEIGHT - 160; // dejar espacio para bottom panel approx
+  // Convert touch event coordinates to SVG viewBox coords
+  const screenToViewBox = useCallback((evt) => {
+    const { locationX, locationY } = evt.nativeEvent;
+    // Map container size
+    const mapW = SCREEN_WIDTH;
+    const mapH = SCREEN_HEIGHT * 0.65;
+    const x = Math.max(0, Math.min(MAP_WIDTH, Math.round((locationX / mapW) * MAP_WIDTH)));
+    const y = Math.max(0, Math.min(MAP_HEIGHT, Math.round((locationY / mapH) * MAP_HEIGHT)));
+    return { x, y };
+  }, []);
 
-      // Si el SVG tiene width/height 100% y viewBox 1000x1000
-      const ratioX = 1000 / mapWidth;
-      const ratioY = 1000 / mapHeight;
+  const handleMapTouchStart = useCallback(
+    (evt) => {
+      if (!editing) return;
+      const pt = screenToViewBox(evt);
 
-      const vbX = (screenX - mapLeft) * ratioX;
-      const vbY = (screenY - mapTop) * ratioY;
-
-      // Clamping a viewBox
-      const clampedX = Math.max(0, Math.min(1000, vbX));
-      const clampedY = Math.max(0, Math.min(1000, vbY));
-
-      return { x: clampedX, y: clampedY };
-    },
-    [SCREEN_WIDTH, SCREEN_HEIGHT]
-  );
-
-  const productsInZoneSelected = selectedZone
-    ? productsInZone(selectedZone.id)
-    : [];
-
-  // Handler de toque en el SVG para seleccionar zona o iniciar dibujo
-  const handleMapPress = useCallback(
-    (event) => {
-      if (drawing && drawStart) {
-        // Modo dibujo: actualizar punto current mientras arrastramos
-        const pt = screenToViewBox(
-          event.nativeEvent?.location?.x ?? event.nativeEvent?.x ?? 0,
-          event.nativeEvent?.location?.y ?? event.nativeEvent?.y ?? 0
-        );
+      if (editMode === "draw") {
+        setDrawing(true);
+        setDrawStart(pt);
         setDrawCurrent(pt);
-      } else {
-        // Modo normal: intentar seleccionar una zona tocada
-        const touchLoc = screenToViewBox(
-          event.nativeEvent?.location?.x ?? event.nativeEvent?.x ?? 0,
-          event.nativeEvent?.location?.y ?? event.nativeEvent?.y ?? 0
-        );
-
-        const hitZone = visibleZones.find((z) => {
-          return (
-            touchLoc.x >= z.x &&
-            touchLoc.x <= z.x + z.w &&
-            touchLoc.y >= z.y &&
-            touchLoc.y <= z.y + z.h
-          );
-        });
-
-        if (hitZone) {
-          setSelectedZone(hitZone);
-          setFocusZoneId(hitZone.id);
-          setActiveFloor(hitZone.floor);
-        } else {
-          // Tocar en área vacía - iniciar modo dibujo
-          setDrawing(true);
-          setDrawStart(touchLoc);
-        }
       }
     },
-    [drawing, drawStart, visibleZones, screenToViewBox]
+    [editing, editMode, screenToViewBox]
   );
 
-  // Cuando el usuario suelta el toque después de iniciar dibujo
-  const handleMapRelease = useCallback(
-    () => {
-      if (drawing && drawStart) {
-        // Cerrar dibujo y crear zona con las coordenadas
-        const x1 = drawStart.x;
-        const y1 = drawStart.y;
-        const x2 = drawCurrent?.x ?? drawStart.x;
-        const y2 = drawCurrent?.y ?? drawStart.y;
-
-        const newX = Math.min(x1, x2);
-        const newY = Math.min(y1, y2);
-        const newW = Math.max(Math.abs(x1 - x2), 50); // mínimo 50
-        const newH = Math.max(Math.abs(y1 - y2), 50); // mínimo 50
-
-        setNewZone({
-          name: "Nuevo mueble",
-          type: "floorstand",
-          x: newX,
-          y: newY,
-          w: newW,
-          h: newH,
-          color: "#3b82f6",
-          floor: Number(activeFloor) || 1,
-        });
-        setShowAddModal(true);
-        setDrawing(false);
-        setDrawStart(null);
-        setDrawCurrent(null);
-      } else {
-        setDrawing(false);
-        setDrawStart(null);
-        setDrawCurrent(null);
-      }
+  const handleMapTouchMove = useCallback(
+    (evt) => {
+      if (!editing || !drawing || editMode !== "draw") return;
+      const pt = screenToViewBox(evt);
+      setDrawCurrent(pt);
     },
-    [drawing, drawStart, drawCurrent, activeFloor, setNewZone, setShowAddModal]
+    [editing, drawing, editMode, screenToViewBox]
   );
 
-  // Limpiar drawCurrent al salir del modal o cancelar
-  useEffect(() => {
-    if (!showAddModal) {
+  const handleMapTouchEnd = useCallback(
+    (evt) => {
+      if (!editing || !drawing || editMode !== "draw" || !drawStart) {
+        setDrawing(false);
+        return;
+      }
+
+      const pt = screenToViewBox(evt);
+      const x = Math.min(drawStart.x, pt.x);
+      const y = Math.min(drawStart.y, pt.y);
+      const w = Math.abs(pt.x - drawStart.x);
+      const h = Math.abs(pt.y - drawStart.y);
+
       setDrawing(false);
       setDrawStart(null);
       setDrawCurrent(null);
-    }
-  }, [showAddModal]);
 
-  // Actualizar zona cuando se guarda un nuevo mueble
-  const handleZoneSave = async (zoneData) => {
-    try {
-      const res = await createZone(zoneData);
-      if (!res.ok) throw new Error(res.error || "Error creando mueble");
+      if (w >= 30 && h >= 30) {
+        // Open modal to configure new zone with drawn dimensions
+        setZoneFormData({
+          id: null,
+          name: "",
+          type: "floorstand",
+          x,
+          y,
+          w,
+          h,
+          color: "#3b82f6",
+          floor: activeFloor === "all" ? 1 : Number(activeFloor),
+        });
+        setShowZoneModal(true);
+      }
+    },
+    [editing, drawing, editMode, drawStart, activeFloor, screenToViewBox]
+  );
 
-      setZones((prev) => [...prev, res.data]);
-      setShowAddModal(false);
-      setNewZone({
-        name: "",
-        type: "floorstand",
-        x: 150,
-        y: 150,
-        w: 120,
-        h: 100,
-        color: "#3b82f6",
-        floor: 1,
+  const handleZonePress = (zone) => {
+    if (editing) {
+      // Edit zone
+      setZoneFormData({
+        id: zone.id,
+        name: zone.name,
+        type: zone.type,
+        x: zone.x,
+        y: zone.y,
+        w: zone.w,
+        h: zone.h,
+        color: zone.color || zoneColor(zone.type),
+        floor: zone.floor || 1,
       });
-    } catch (err) {
-      Alert.alert("Error", err.message || "No se pudo crear el mueble");
+      setShowZoneModal(true);
+    } else {
+      setSelectedZone(zone);
+      setFocusZoneId(zone.id);
     }
   };
 
-  // Actualizar zona existente
-  const handleZoneUpdate = async (zoneId, updates) => {
+  const handleSaveZone = async () => {
+    if (!zoneFormData.name.trim()) {
+      Alert.alert("Campo requerido", "Por favor ingresa un nombre para el mueble.");
+      return;
+    }
+
     try {
-      const res = await updateZone(zoneId, updates);
-      if (!res.ok) throw new Error(res.error || "Error actualizando mueble");
-
-      setZones((prev) =>
-        prev.map((z) => (z.id === zone.id ? res.data : z))
-      );
-      if (selectedZone?.id === zoneId) setSelectedZone(res.data);
+      if (zoneFormData.id) {
+        // Update
+        const res = await updateZone(zoneFormData.id, zoneFormData);
+        if (!res.ok) throw new Error(res.error || "Error al actualizar");
+        setZones((prev) =>
+          prev.map((z) => (z.id === zoneFormData.id ? { ...z, ...zoneFormData } : z))
+        );
+        if (selectedZone?.id === zoneFormData.id) {
+          setSelectedZone({ ...selectedZone, ...zoneFormData });
+        }
+      } else {
+        // Create
+        const res = await createZone(zoneFormData);
+        if (!res.ok) throw new Error(res.error || "Error al crear");
+        const created = res.data || { ...zoneFormData, id: Date.now() };
+        setZones((prev) => [...prev, created]);
+        setSelectedZone(created);
+        setFocusZoneId(created.id);
+      }
+      setShowZoneModal(false);
     } catch (err) {
-      Alert.alert("Error", err.message || "No se pudo actualizar el mueble");
+      Alert.alert("Error", err.message || "No se pudo guardar el mueble.");
     }
   };
 
-  // Eliminar zona
-  const handleZoneDelete = async (zone) => {
-    const confirm = await Alert.alert(
+  const handleDeleteZone = () => {
+    if (!zoneFormData.id) return;
+    Alert.alert(
       "Eliminar mueble",
-      `¿Eliminar "${zone.name}"? Los productos de esta zona se desasignarán.`,
+      `¿Deseas eliminar "${zoneFormData.name}"? Los productos quedarán desasignados.`,
       [
         { text: "Cancelar", style: "cancel" },
         {
@@ -314,14 +282,16 @@ export default function MapScreen({ navigation, route }) {
           style: "destructive",
           onPress: async () => {
             try {
-              const res = await deleteZone(zone.id);
-              if (!res.ok) throw new Error(res.error || "Error eliminando");
-
-              setZones((prev) => prev.filter((z) => z.id !== zone.id));
-              if (selectedZone?.id === zone.id) setSelectedZone(null);
-              setFocusZoneId(null);
+              const res = await deleteZone(zoneFormData.id);
+              if (!res.ok) throw new Error(res.error || "Error al eliminar");
+              setZones((prev) => prev.filter((z) => z.id !== zoneFormData.id));
+              setProducts((prev) =>
+                prev.map((p) => (p.zone_id === zoneFormData.id ? { ...p, zone_id: null } : p))
+              );
+              if (selectedZone?.id === zoneFormData.id) setSelectedZone(null);
+              setShowZoneModal(false);
             } catch (err) {
-              Alert.alert("Error", err.message || "No se pudo eliminar");
+              Alert.alert("Error", err.message || "No se pudo eliminar.");
             }
           },
         },
@@ -329,47 +299,37 @@ export default function MapScreen({ navigation, route }) {
     );
   };
 
-  // Abrir modal para cambiar mueble de un producto
-  const [showAssignModal, setShowAssignModal] = useState(false);
-  const [assignProductCode, setAssignProductCode] = useState("");
-  const [assignToZoneId, setAssignToZoneId] = useState(null);
-
   const openAssignModal = (productCode, currentZoneId) => {
     setAssignProductCode(productCode);
-    // Cargar todas las zonas excepto la actual
     const otherZones = zones.filter((z) => z.id !== currentZoneId);
-    if (otherZones.length > 0) {
-      setAssignToZoneId(otherZones[0].id);
-    } else {
-      setAssignToZoneId(null);
-    }
+    setAssignToZoneId(otherZones.length > 0 ? otherZones[0].id : null);
     setShowAssignModal(true);
-  };
-
-  const closeAssignModal = () => {
-    setShowAssignModal(false);
-    setAssignProductCode("");
-    setAssignToZoneId(null);
   };
 
   const confirmAssignProduct = async () => {
     if (!assignProductCode || assignToZoneId === null) return;
     try {
       const res = await assignProductToZone(assignProductCode, assignToZoneId);
-      if (!res.ok) throw new Error(res.error || "Error asignando producto");
+      if (!res.ok) throw new Error(res.error || "Error al asignar producto");
 
-      // Actualizar productos localmente
+      const targetZone = zones.find((z) => z.id === assignToZoneId);
       setProducts((prev) =>
         prev.map((p) =>
           p.code === assignProductCode
-            ? { ...p, zone_id: assignToZoneId, zone_name: zones.find(z => z.id === assignToZoneId)?.name || null, zone_type: zones.find(z => z.id === assignToZoneId)?.type || null }
+            ? {
+                ...p,
+                zone_id: assignToZoneId,
+                zone_name: targetZone?.name || null,
+                zone_type: targetZone?.type || null,
+              }
             : p
         )
       );
 
-      closeAssignModal();
+      setShowAssignModal(false);
+      setAssignProductCode("");
     } catch (err) {
-      Alert.alert("Error", err.message || "No se pudo asignar el producto");
+      Alert.alert("Error", err.message || "No se pudo reasignar el producto.");
     }
   };
 
@@ -378,8 +338,8 @@ export default function MapScreen({ navigation, route }) {
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#3b82f6" />
-          <Text style={styles.loadingText}>Cargando mapa...</Text>
+          <ActivityIndicator size="large" color="#2563eb" />
+          <Text style={styles.loadingText}>Cargando mapa de tienda...</Text>
         </View>
       </SafeAreaView>
     );
@@ -399,445 +359,340 @@ export default function MapScreen({ navigation, route }) {
     );
   }
 
-  const productsInZoneSelected = selectedZone
-    ? productsInZone(selectedZone.id)
-    : [];
-
-  // Determinar si estamos enfocados en un producto específico
-  const isProductFocus = !!initialProductCode && !initialZoneId;
+  const selectedZoneProducts = selectedZone ? productsInZone(selectedZone.id) : [];
 
   return (
-    <SafeAreaView style={styles.container} edges={["bottom"]}>
+    <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
+      {/* HEADER */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Text style={styles.backText}>← Volver</Text>
         </TouchableOpacity>
-        <Text style={styles.mapTitle}>Mapa de la tienda</Text>
-        {editing ? (
-          <TouchableOpacity style={styles.doneButton} onPress={toggleEditing}>
-            <Text style={styles.doneText}>✓ Listo</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={styles.editButton} onPress={toggleEditing}>
-            <Text style={styles.editText}>✏ Editar muebles</Text>
-          </TouchableOpacity>
-        )}
-        {/* selector de pisos */}
-        {visibleZones.length > 1 && (
-          <View style={styles.floorSelector}>
-            {Object.entries(FLOOR_LABELS).map(([floor, label]) => (
-              <TouchableOpacity
-                key={floor}
-                style={[
-                  styles.floorChip,
-                  activeFloor == floor && styles.floorChipActive,
-                ]}
-                onPress={() => setActiveFloor(floor)}
-              >
-                <Text style={styles.floorChipText}>
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
+        <Text style={styles.mapTitle}>Plano de la Tienda</Text>
+        <TouchableOpacity
+          style={editing ? styles.doneButton : styles.editButton}
+          onPress={() => setEditing(!editing)}
+        >
+          <Text style={editing ? styles.doneText : styles.editText}>
+            {editing ? "✓ Listo" : "✏ Editar"}
+          </Text>
+        </TouchableOpacity>
       </View>
 
-      <View style={styles.mapContainer}>
-        <Svg
-          width="100%"
-          height="100%"
-          viewBox={MAP_VIEWBOX}
-          style={styles.svg}
-          onTouch={handleMapPress}
-          onTouchEnd={handleMapRelease}
-        >
-          {/* Dibujar zona de selección mientras se dibuja */}
-          {drawing && drawStart && (
-            <Rect
-              x={drawStart.x}
-              y={drawStart.y}
-              width={drawCurrent?.x > drawStart.x ? drawCurrent.x - drawStart.x : drawStart.x - drawCurrent.x}
-              height={drawCurrent?.y > drawStart.y ? drawCurrent.y - drawStart.y : drawStart.y - drawCurrent.y}
-              fill="rgba(168, 85, 247, 0.3)"
-              stroke="#a855f7"
-              strokeWidth={2}
-            />
-          )}
+      {/* SELECTOR DE PISOS */}
+      <View style={styles.floorBar}>
+        {Object.entries(FLOOR_LABELS).map(([floor, label]) => (
+          <TouchableOpacity
+            key={floor}
+            style={[styles.floorChip, activeFloor === floor && styles.floorChipActive]}
+            onPress={() => setActiveFloor(floor)}
+          >
+            <Text
+              style={[styles.floorChipText, activeFloor === floor && styles.floorChipTextActive]}
+            >
+              {label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
-          {/* Resaltar la zona focus (producto escaneado/buscado) */}
-          {focusZoneId && (
-            <Rect
-              x={zones.find((z) => z.id == focusZoneId)?.x - 10}
-              y={zones.find((z) => z.id == focusZoneId)?.y - 10}
-              width={zones.find((z) => z.id == focusZoneId)?.w + 20}
-              height={zones.find((z) => z.id == focusZoneId)?.h + 20}
-              fill="none"
-              stroke="#f59e0b"
-              strokeWidth={3}
-              strokeDasharray="5, 5"
-            />
-          )}
+      {/* BARRA DE MODO EDICIÓN */}
+      {editing && (
+        <View style={styles.editToolbar}>
+          <TouchableOpacity
+            style={[styles.editToolBtn, editMode === "move" && styles.editToolBtnActive]}
+            onPress={() => setEditMode("move")}
+          >
+            <Text style={styles.editToolBtnText}>✋ Tocar / Editar</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.editToolBtn, editMode === "draw" && styles.editToolBtnActive]}
+            onPress={() => setEditMode("draw")}
+          >
+            <Text style={styles.editToolBtnText}>📐 Dibujar Cuadro</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.newZoneBtn}
+            onPress={() => {
+              setZoneFormData({
+                id: null,
+                name: "",
+                type: "floorstand",
+                x: 200,
+                y: 200,
+                w: 160,
+                h: 120,
+                color: "#3b82f6",
+                floor: activeFloor === "all" ? 1 : Number(activeFloor),
+              });
+              setShowZoneModal(true);
+            }}
+          >
+            <Text style={styles.newZoneBtnText}>➕ Crear</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
+      {/* CONTENEDOR DEL MAPA (GRANDE, FLEX: 1) */}
+      <View
+        style={styles.mapContainer}
+        onTouchStart={handleMapTouchStart}
+        onTouchMove={handleMapTouchMove}
+        onTouchEnd={handleMapTouchEnd}
+      >
+        <Svg width="100%" height="100%" viewBox={MAP_VIEWBOX} style={styles.svg}>
+          <Defs>
+            <Pattern id="storeGrid" width="40" height="40" patternUnits="userSpaceOnUse">
+              <Path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e2e8f0" strokeWidth="0.8" />
+            </Pattern>
+          </Defs>
+          <Rect width={MAP_WIDTH} height={MAP_HEIGHT} fill="url(#storeGrid)" />
+
+          {/* Zonas y Muebles */}
           {visibleZones.map((zone) => {
             const isSelected = selectedZone?.id === zone.id;
+            const isFocused = focusZoneId === zone.id;
             const zoneProds = productsInZone(zone.id);
+            const fillCol = zone.color || zoneColor(zone.type);
 
             return (
-              <TouchableOpacity
-                key={zone.id}
-                onPress={() => setSelectedZone(zone)}
-                hitSlop={15}
-              >
+              <G key={zone.id} onPress={() => handleZonePress(zone)}>
+                {/* Resaltado cuando está seleccionado o enfocado desde el escáner */}
+                {(isSelected || isFocused) && (
+                  <Rect
+                    x={zone.x - 6}
+                    y={zone.y - 6}
+                    width={zone.w + 12}
+                    height={zone.h + 12}
+                    fill="none"
+                    stroke="#f59e0b"
+                    strokeWidth={4}
+                    rx={14}
+                    ry={14}
+                    strokeDasharray="6,4"
+                  />
+                )}
+
                 <Rect
                   x={zone.x}
                   y={zone.y}
                   width={zone.w}
                   height={zone.h}
-                  fill={isSelected ? zoneColor(zone.type) : zone.color}
-                  opacity={isSelected ? 0.95 : 0.7}
+                  fill={fillCol}
+                  opacity={isSelected ? 0.95 : 0.82}
                   stroke="#1e293b"
-                  strokeWidth={isSelected || editing ? 3 : 2}
-                  rx={8}
-                  ry={8}
+                  strokeWidth={isSelected ? 3 : 1.5}
+                  rx={10}
+                  ry={10}
                 />
+
                 <SvgText
                   x={zone.x + zone.w / 2}
                   y={zone.y + zone.h / 2 - 8}
                   textAnchor="middle"
                   fill="#ffffff"
                   fontWeight="bold"
-                  fontSize={11}
-                  pointerEvents="none"
+                  fontSize={13}
                 >
                   {zone.name}
                 </SvgText>
+
                 <SvgText
                   x={zone.x + zone.w / 2}
-                  y={zone.y + zone.h / 2 + 10}
+                  y={zone.y + zone.h / 2 + 12}
                   textAnchor="middle"
                   fill="#ffffff"
-                  fontSize={9}
+                  fontSize={10}
                   opacity={0.9}
-                  pointerEvents="none"
                 >
-                  {TYPE_LABELS[zone.type] || zone.type}
+                  {zoneProds.length} {zoneProds.length === 1 ? "prenda" : "prendas"}
                 </SvgText>
-                {zoneProds.length > 0 && (
-                  <Circle
-                    cx={zone.x + zone.w - 14}
-                    cy={zone.y + zone.h - 14}
-                    r={11}
-                    fill="#ef4444"
-                    pointerEvents="none"
-                  />
+
+                {/* Badge con piso si estamos en planta completa */}
+                {activeFloor === "all" && zone.floor > 1 && (
+                  <G>
+                    <Rect
+                      x={zone.x + 6}
+                      y={zone.y + 6}
+                      width={32}
+                      height={18}
+                      fill="#0f172a"
+                      opacity={0.8}
+                      rx={4}
+                    />
+                    <SvgText
+                      x={zone.x + 22}
+                      y={zone.y + 19}
+                      textAnchor="middle"
+                      fill="#ffffff"
+                      fontSize={9}
+                      fontWeight="bold"
+                    >
+                      P{zone.floor}
+                    </SvgText>
+                  </G>
                 )}
-                {editing && (
-                  <Circle
-                    cx={zone.x + zone.w - 10}
-                    cy={zone.y + 10}
-                    r={9}
-                    fill="#ffffff"
-                    stroke="#ef4444"
-                    strokeWidth={2}
-                    pointerEvents="none"
-                  />
-                )}
-              </TouchableOpacity>
+              </G>
             );
           })}
 
-          {/* Modo dibujo: mostrar rectángulo preview */}
+          {/* Preview del rectángulo dibujándose */}
           {drawing && drawStart && drawCurrent && (
-            <Path
-              d={`
-                M ${drawStart.x} ${drawStart.y}
-                L ${drawCurrent.x} ${drawStart.y}
-                L ${drawCurrent.x} ${drawCurrent.y}
-                L ${drawStart.x} ${drawCurrent.y}
-                Z
-              `}
-              fill="rgba(168, 85, 247, 0.3)"
+            <Rect
+              x={Math.min(drawStart.x, drawCurrent.x)}
+              y={Math.min(drawStart.y, drawCurrent.y)}
+              width={Math.abs(drawCurrent.x - drawStart.x)}
+              height={Math.abs(drawCurrent.y - drawStart.y)}
+              fill="rgba(168, 85, 247, 0.25)"
               stroke="#a855f7"
-              strokeWidth={2}
+              strokeWidth={3}
+              strokeDasharray="6,4"
+              rx={8}
             />
           )}
         </Svg>
+      </View>
 
-        <View style={styles.legend}>
-          {Object.entries(TYPE_LABELS).map(([type, label]) => (
-            <View key={type} style={styles.legendItem}>
-              <View
-                style={[
-                  styles.legendDot,
-                  { backgroundColor: zoneColor(type) },
-                ]}
-              />
-              <Text style={styles.legendText}>{label}</Text>
-            </View>
-          ))}
-          {/* Agregar entrada para piso actual */}
-          {activeFloor !== "all" && (
-            <View key="floor-active" style={styles.legendItem}>
-              <View
-                style={[
-                  styles.legendDot,
-                  { backgroundColor: zoneColor("floorstand") },
-                ]}
-              />
-              <Text style={styles.legendText}>{FLOOR_LABELS[activeFloor]}</Text>
-            </View>
-          ))}
-        </View>
-
-        {editing && (
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={() => {
-              setNewZone({
-                name: "",
-                type: "floorstand",
-                x: 200,
-                y: 200,
-                w: 120,
-                h: 100,
-                color: "#3b82f6",
-                floor: Number(activeFloor) || 1,
-              });
-              setShowAddModal(true);
-            }}
-          >
-            <Text style={styles.addButtonText}>+ Nuevo mueble</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Panel inferior: zona seleccionada */}
-        {selectedZone && (
-          <View style={styles.bottomPanel}>
-            <TouchableOpacity style={styles.closeButton} onPress={() => setSelectedZone(null)}>
-              <Text style={styles.closeText}>✕ Cerrar</Text>
-            </TouchableOpacity>
-            <View style={styles.panelHeader}>
-              <Text style={styles.panelTitle}>
-                {selectedZone.name}
-              </Text>
+      {/* PANEL INFERIOR: DETALLE DEL MUEBLE SELECCIONADO */}
+      {selectedZone && (
+        <View style={styles.bottomPanel}>
+          <View style={styles.panelHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.panelTitle}>{selectedZone.name}</Text>
               <Text style={styles.panelSubtitle}>
-                {TYPE_LABELS[selectedZone.type] || selectedZone.type} •
-                {zoneProducts.length} producto(s)
+                {TYPE_LABELS[selectedZone.type] || selectedZone.type} • Piso {selectedZone.floor || 1} • {selectedZoneProducts.length} prenda(s)
               </Text>
             </View>
+            <TouchableOpacity style={styles.closeButton} onPress={() => setSelectedZone(null)}>
+              <Text style={styles.closeText}>✕</Text>
+            </TouchableOpacity>
+          </View>
 
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.scrollContent}
-            >
-              {zoneProducts.length === 0 ? (
-                <Text style={styles.emptyZone}>No hay productos asignados en este mueble.</Text>
-              ) : (
-                zoneProducts.map((p) => (
-                  <TouchableOpacity
-                    key={p.id}
-                    style={styles.productRow}
-                  >
-                    <View style={styles.productInfo}>
-                      <Text style={styles.productCode}>{p.code}</Text>
-                      <Text style={styles.productName}>{p.name}</Text>
-                      <Text style={styles.productDetail}>
-                        {p.category} • {p.size || "-"} • {p.color || "-"}
-                      </Text>
-                    </View>
-                    <Text style={styles.productPrice}>
-                      ${p.price ? p.price.toLocaleString() : "-"}
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            {selectedZoneProducts.length === 0 ? (
+              <Text style={styles.emptyZone}>No hay productos asignados en este mueble.</Text>
+            ) : (
+              selectedZoneProducts.map((p) => (
+                <View key={p.id} style={styles.productRow}>
+                  <View style={styles.productInfo}>
+                    <Text style={styles.productCode}>{p.code}</Text>
+                    <Text style={styles.productName}>{p.name}</Text>
+                    <Text style={styles.productDetail}>
+                      {p.category} • {p.size || "-"} • {p.color || "-"}
                     </Text>
-                    {/* Botón "Cambiar mueble" en cada producto */}
-                    {zoneProducts.length > 0 && (
-                      <TouchableOpacity
-                        style={styles.changeZoneButton}
-                        onPress={() => openAssignModal(p.code, selectedZone.id)}
-                      >
-                        <Text style={styles.changeZoneButtonText}>
-                          Cambiar mueble
-                        </Text>
-                      </TouchableOpacity>
-                    )}
+                  </View>
+                  <TouchableOpacity
+                    style={styles.changeZoneButton}
+                    onPress={() => openAssignModal(p.code, selectedZone.id)}
+                  >
+                    <Text style={styles.changeZoneButtonText}>Cambiar</Text>
                   </TouchableOpacity>
-                ))
-              )}
+                </View>
+              ))
+            )}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* MODAL: CAMBIAR MUEBLE A PRODUCTO */}
+      <Modal visible={showAssignModal} transparent animationType="slide" onRequestClose={() => setShowAssignModal(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Reasignar Mueble</Text>
+            <Text style={styles.modalLabel}>Producto: {assignProductCode}</Text>
+            <Text style={styles.modalLabelSmall}>Selecciona el nuevo mueble:</Text>
+
+            <ScrollView style={{ maxHeight: 240, marginVertical: 8 }}>
+              {zones.map((z) => (
+                <TouchableOpacity
+                  key={z.id}
+                  style={[styles.typeChip, assignToZoneId === z.id && styles.typeChipActive]}
+                  onPress={() => setAssignToZoneId(z.id)}
+                >
+                  <Text style={[styles.typeChipText, assignToZoneId === z.id && styles.typeChipTextActive]}>
+                    {z.name} (Piso {z.floor || 1})
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </ScrollView>
 
-            {/* Modal para cambiar mueble de producto */}
-            {showAssignModal && (
-              <Modal
-                visible={showAssignModal}
-                transparent={true}
-                onRequestClose={closeAssignModal}
-              >
-                <View style={styles.modalBackdrop} onTouchEnd={closeAssignModal}>
-                  <View style={styles.modalContent}>
-                    <Text style={styles.modalTitle}>Cambiar mueble</Text>
-                    <Text style={styles.modalLabel}>Producto</Text>
-                    <Text style={styles.modalInputSmall} readOnly>
-                      {assignProductCode}
-                    </Text>
-                    <Text style={styles.modalLabel}>Nueva ubicación</Text>
-                    <View style={styles.typeSelector}>
-                      {zones.map((z) => (
-                        <TouchableOpacity
-                          key={z.id}
-                          style={[
-                            styles.typeChip,
-                            assignToZoneId === z.id && styles.typeChipActive,
-                          ]}
-                          onPress={() => setAssignToZoneId(z.id)}
-                        >
-                          <Text style={[
-                            styles.typeChipText,
-                            assignToZoneId === z.id && styles.typeChipTextActive,
-                          ]}>
-                            {z.name}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                    <View style={styles.modalActions}>
-                      <TouchableOpacity style={styles.modalCancel} onPress={closeAssignModal}>
-                        <Text style={styles.modalCancelText}>Cancelar</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.modalSave} onPress={confirmAssignProduct}>
-                        <Text style={styles.modalSaveText}>Asignar</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
-              </Modal>
-            )}
-
-            {/* Modal para añadir nuevo mueble (reutilizado) */}
-            {showAddModal && (
-              <Modal
-                visible={showAddModal}
-                transparent={true}
-                onRequestClose={() => setShowAddModal(false)}
-              >
-                <View style={styles.modalBackdrop} onTouchEnd={() => setShowAddModal(false)}>
-                  <View style={styles.modalContent}>
-                    <Text style={styles.modalTitle}>Nuevo mueble</Text>
-                    <ScrollView contentContainerStyle={styles.modalScroll}>
-                      <Text style={styles.modalLabel}>Nombre</Text>
-                      <TextInput
-                        style={styles.modalInput}
-                        value={newZone.name}
-                        onChangeText={(t) =>
-                          setNewZone({ ...newZone, name: t })
-                        }
-                        placeholder="Ej: Floorstand B"
-                      />
-                      <Text style={styles.modalLabel}>Tipo</Text>
-                      <View style={styles.typeSelector}>
-                        {Object.entries(TYPE_LABELS).map(([type, label]) => (
-                          <TouchableOpacity
-                            key={type}
-                            style={[
-                              styles.typeChip,
-                              newZone.type === type && styles.typeChipActive,
-                            ]}
-                            onPress={() => setNewZone({ ...newZone, type })}
-                          >
-                            <Text style={[styles.typeChipText, newZone.type === type && styles.typeChipTextActive]}>
-                              {label}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                      <Text style={styles.modalLabel}>Color</Text>
-                      <View style={styles.colorSelector}>
-                        {["#3b82f6", "#10b981", "#6366f1", "#8b5cf6", "#ef4444", "#f59e0b", "#94a3b8"].map(
-                          (color) => (
-                            <TouchableOpacity
-                              key={color}
-                              style={[
-                                styles.colorChip,
-                                newZone.color === color && styles.colorChipActive,
-                                { backgroundColor: color },
-                              ]}
-                              onPress={() => setNewZone({ ...newZone, color })}
-                            />
-                          )
-                        )}
-                      </View>
-                      <View style={styles.modalFields}>
-                        <View style={styles.modalField}>
-                          <Text style={styles.modalLabelSmall}>X</Text>
-                          <TextInput
-                            style={styles.modalInputSmall}
-                            value={String(newZone.x)}
-                            onChangeText={(t) =>
-                              setNewZone({ ...newZone, x: parseInt(t) || 0 })
-                            }
-                            keyboardType="numeric"
-                          />
-                        </View>
-                        <View style={styles.modalField}>
-                          <Text style={styles.modalLabelSmall}>Y</Text>
-                          <TextInput
-                            style={styles.modalInputSmall}
-                            value={String(newZone.y)}
-                            onChangeText={(t) =>
-                              setNewZone({ ...newZone, y: parseInt(t) || 0 })
-                            }
-                            keyboardType="numeric"
-                          />
-                        </View>
-                        <View style={styles.modalField}>
-                          <Text style={styles.modalLabelSmall}>Ancho</Text>
-                          <TextInput
-                            style={styles.modalInputSmall}
-                            value={String(newZone.w)}
-                            onChangeText={(t) =>
-                              setNewZone({ ...newZone, w: parseInt(t) || 50 })
-                            }
-                            keyboardType="numeric"
-                          />
-                        </View>
-                        <View style={styles.modalField}>
-                          <Text style={styles.modalLabelSmall}>Alto</Text>
-                          <TextInput
-                            style={styles.modalInputSmall}
-                            value={String(newZone.h)}
-                            onChangeText={(t) =>
-                              setNewZone({ ...newZone, h: parseInt(t) || 50 })
-                            }
-                            keyboardType="numeric"
-                          />
-                        </View>
-                      </View>
-                    </ScrollView>
-                    <View style={styles.modalActions}>
-                      <TouchableOpacity style={styles.modalCancel} onPress={() => setShowAddModal(false)}>
-                        <Text style={styles.modalCancelText}>Cancelar</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.modalSave} onPress={() => handleZoneSave(newZone)}>
-                        <Text style={styles.modalSaveText}>Guardar mueble</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
-              </Modal>
-            )}
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowAssignModal(false)}>
+                <Text style={styles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalSave} onPress={confirmAssignProduct}>
+                <Text style={styles.modalSaveText}>Asignar Mueble</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        )}
+        </View>
+      </Modal>
 
-        {/* Si hay producto focalizado pero no hay zona seleccionada, mostrar info */}
-        {!selectedZone && initialProductCode && (
-          <View style={styles.noZoneInfo}>
-            <Text style={styles.noZoneText}>
-              El producto {initialProductCode} no tiene zona asignada en el mapa
+      {/* MODAL: CREAR / EDITAR MUEBLE */}
+      <Modal visible={showZoneModal} transparent animationType="slide" onRequestClose={() => setShowZoneModal(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>
+              {zoneFormData.id ? "Editar Mueble" : "Nuevo Mueble"}
             </Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalLabelSmall}>Nombre del Mueble</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={zoneFormData.name}
+                onChangeText={(t) => setZoneFormData({ ...zoneFormData, name: t })}
+                placeholder="Ej: Perchero Poleras"
+              />
+
+              <Text style={styles.modalLabelSmall}>Tipo de Mueble</Text>
+              <View style={styles.typeSelector}>
+                {Object.entries(TYPE_LABELS).map(([tKey, tLabel]) => (
+                  <TouchableOpacity
+                    key={tKey}
+                    style={[styles.typeChip, zoneFormData.type === tKey && styles.typeChipActive]}
+                    onPress={() => setZoneFormData({ ...zoneFormData, type: tKey })}
+                  >
+                    <Text style={[styles.typeChipText, zoneFormData.type === tKey && styles.typeChipTextActive]}>
+                      {tLabel}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.modalLabelSmall}>Piso</Text>
+              <View style={styles.floorRow}>
+                {[1, 2, 3].map((f) => (
+                  <TouchableOpacity
+                    key={f}
+                    style={[styles.floorChip, zoneFormData.floor === f && styles.floorChipActive]}
+                    onPress={() => setZoneFormData({ ...zoneFormData, floor: f })}
+                  >
+                    <Text style={[styles.floorChipText, zoneFormData.floor === f && styles.floorChipTextActive]}>
+                      Piso {f}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              {zoneFormData.id && (
+                <TouchableOpacity style={styles.modalDelete} onPress={handleDeleteZone}>
+                  <Text style={styles.modalDeleteText}>Eliminar</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowZoneModal(false)}>
+                <Text style={styles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalSave} onPress={handleSaveZone}>
+                <Text style={styles.modalSaveText}>Guardar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        )}
-      </SafeAreaView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -845,7 +700,7 @@ export default function MapScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "#ffffff",
   },
   center: {
     flex: 1,
@@ -870,7 +725,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   retryButton: {
-    backgroundColor: "#3b82f6",
+    backgroundColor: "#2563eb",
     paddingHorizontal: 24,
     paddingVertical: 10,
     borderRadius: 8,
@@ -882,31 +737,31 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
+    paddingVertical: 10,
     backgroundColor: "#ffffff",
     borderBottomWidth: 1,
     borderBottomColor: "#e2e8f0",
-    gap: 8,
   },
   backButton: {
-    marginRight: 8,
+    paddingVertical: 4,
+    paddingRight: 8,
   },
   backText: {
-    color: "#3b82f6",
-    fontSize: 16,
+    color: "#2563eb",
+    fontSize: 15,
+    fontWeight: "600",
   },
   mapTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "bold",
-    color: "#1e293b",
-    flex: 1,
+    color: "#0f172a",
   },
   editButton: {
     backgroundColor: "#f1f5f9",
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#cbd5e1",
@@ -917,9 +772,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   doneButton: {
-    backgroundColor: "#3b82f6",
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    backgroundColor: "#2563eb",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 8,
   },
   doneText: {
@@ -927,66 +782,79 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 13,
   },
+  floorBar: {
+    flexDirection: "row",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "#f8fafc",
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
+  },
+  floorChip: {
+    flex: 1,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    alignItems: "center",
+  },
+  floorChipActive: {
+    backgroundColor: "#2563eb",
+    borderColor: "#2563eb",
+  },
+  floorChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#475569",
+  },
+  floorChipTextActive: {
+    color: "#ffffff",
+    fontWeight: "700",
+  },
+  editToolbar: {
+    flexDirection: "row",
+    backgroundColor: "#1e293b",
+    padding: 8,
+    gap: 8,
+  },
+  editToolBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    alignItems: "center",
+  },
+  editToolBtnActive: {
+    backgroundColor: "#f59e0b",
+  },
+  editToolBtnText: {
+    color: "#ffffff",
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  newZoneBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#10b981",
+  },
+  newZoneBtnText: {
+    color: "#ffffff",
+    fontWeight: "700",
+    fontSize: 12,
+  },
   mapContainer: {
     flex: 1,
-    margin: 12,
-    backgroundColor: "#ffffff",
-    borderRadius: 12,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    width: "100%",
+    backgroundColor: "#f8fafc",
   },
   svg: {
     flex: 1,
-    backgroundColor: "#f8fafc",
-  },
-  legend: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: "#ffffff",
-    borderTopWidth: 1,
-    borderTopColor: "#e2e8f0",
-    gap: 10,
-  },
-  legendItem: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  legendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 6,
-  },
-  legendText: {
-    fontSize: 11,
-    color: "#475569",
-  },
-  addButton: {
-    position: "absolute",
-    bottom: 16,
-    right: 16,
-    backgroundColor: "#3b82f6",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  addButtonText: {
-    color: "#ffffff",
-    fontWeight: "bold",
-    fontSize: 14,
+    width: "100%",
+    height: "100%",
   },
   bottomPanel: {
     position: "absolute",
@@ -994,51 +862,55 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: "#ffffff",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
     padding: 16,
+    maxHeight: "50%",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 8,
-    maxHeight: "55%",
-  },
-  closeButton: {
-    alignSelf: "flex-end",
-    marginBottom: 8,
-  },
-  closeText: {
-    color: "#64748b",
-    fontSize: 14,
   },
   panelHeader: {
-    marginBottom: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 10,
   },
   panelTitle: {
     fontSize: 18,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: "#0f172a",
   },
   panelSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#64748b",
-    marginTop: 4,
+    marginTop: 2,
+  },
+  closeButton: {
+    padding: 4,
+  },
+  closeText: {
+    fontSize: 16,
+    color: "#64748b",
+    fontWeight: "bold",
   },
   scrollContent: {
-    paddingBottom: 16,
     gap: 8,
+    paddingBottom: 16,
   },
   emptyZone: {
     color: "#94a3b8",
     textAlign: "center",
-    marginTop: 16,
+    paddingVertical: 16,
+    fontSize: 13,
   },
   productRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: "#f1f5f9",
   },
@@ -1046,9 +918,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   productCode: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "bold",
-    color: "#3b82f6",
+    color: "#2563eb",
   },
   productName: {
     fontSize: 14,
@@ -1056,207 +928,130 @@ const styles = StyleSheet.create({
     color: "#1e293b",
   },
   productDetail: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#64748b",
-    marginTop: 2,
+    marginTop: 1,
   },
-  productPrice: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#10b981",
-    marginLeft: 12,
-  },
-  editingBadge: {
-    position: "absolute",
-    top: 10,
-    left: 0,
-    right: 0,
-    backgroundColor: "#f59e0b",
-    paddingHorizontal: 16,
+  changeZoneButton: {
+    backgroundColor: "#e2e8f0",
+    paddingHorizontal: 10,
     paddingVertical: 6,
-    alignItems: "center",
+    borderRadius: 6,
   },
-  editingText: {
-    color: "#ffffff",
-    fontWeight: "bold",
-    fontSize: 13,
+  changeZoneButtonText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#334155",
   },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
+    justifyContent: "flex-end",
   },
   modalContent: {
     backgroundColor: "#ffffff",
-    borderRadius: 16,
-    width: "100%",
-    maxHeight: "90%",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     padding: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
+    maxHeight: "85%",
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "bold",
-    color: "#1e293b",
-    marginBottom: 16,
-  },
-  modalScroll: {
-    gap: 16,
-    marginBottom: 16,
+    color: "#0f172a",
+    marginBottom: 12,
   },
   modalLabel: {
     fontSize: 14,
-    fontWeight: "600",
-    color: "#475569",
-  },
-  modalInput: {
-    backgroundColor: "#f1f5f9",
-    padding: 12,
-    borderRadius: 8,
-    fontSize: 15,
-    color: "#1e293b",
-  },
-  typeSelector: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  typeChip: {
-    backgroundColor: "#f1f5f9",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-  },
-  typeChipActive: {
-    backgroundColor: "#3b82f6",
-    borderColor: "#3b82f6",
-  },
-  typeChipText: {
-    fontSize: 13,
-    color: "#475569",
-  },
-  typeChipTextActive: {
-    color: "#ffffff",
-    fontWeight: "bold",
-  },
-  colorSelector: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  colorChip: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: "#ffffff",
-  },
-  colorChipActive: {
-    borderWidth: 3,
-    borderColor: "#1e293b",
-    transform: [{ scale: 1.1 }],
-  },
-  modalFields: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  modalField: {
-    flex: 1,
-    minWidth: 70,
+    fontWeight: "700",
+    color: "#334155",
+    marginBottom: 6,
   },
   modalLabelSmall: {
     fontSize: 12,
     fontWeight: "600",
     color: "#64748b",
+    marginTop: 8,
     marginBottom: 4,
   },
-  modalInputSmall: {
-    backgroundColor: "#f1f5f9",
-    padding: 10,
+  modalInput: {
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
     borderRadius: 8,
+    padding: 10,
     fontSize: 14,
-    color: "#1e293b",
+    backgroundColor: "#f8fafc",
+  },
+  typeSelector: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginVertical: 4,
+  },
+  typeChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: "#f1f5f9",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  typeChipActive: {
+    backgroundColor: "#2563eb",
+    borderColor: "#2563eb",
+  },
+  typeChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#475569",
+  },
+  typeChipTextActive: {
+    color: "#ffffff",
+  },
+  floorRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginVertical: 4,
   },
   modalActions: {
     flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 12,
-    marginTop: 8,
+    gap: 8,
+    marginTop: 16,
   },
   modalCancel: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
+    flex: 1,
     backgroundColor: "#f1f5f9",
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
   },
   modalCancelText: {
-    color: "#64748b",
-    fontWeight: "600",
-    fontSize: 13,
+    color: "#475569",
+    fontWeight: "700",
+    fontSize: 14,
   },
   modalSave: {
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: "#3b82f6",
+    flex: 2,
+    backgroundColor: "#10b981",
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
   },
   modalSaveText: {
     color: "#ffffff",
     fontWeight: "bold",
-    fontSize: 13,
+    fontSize: 14,
   },
-  noZoneInfo: {
-    padding: 20,
+  modalDelete: {
+    backgroundColor: "#fee2e2",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
     alignItems: "center",
-    marginTop: 40,
   },
-  noZoneText: {
-    color: "#64748b",
-    fontSize: 16,
-    textAlign: "center",
-  },
-  floorSelector: {
-    flexDirection: "row",
-    gap: 6,
-    marginHorizontal: 16,
-    marginBottom: 8,
-  },
-  floorChip: {
-    backgroundColor: "#e2e8f0",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-  },
-  floorChipActive: {
-    backgroundColor: "#3b82f6",
-    borderColor: "#3b82f6",
-  },
-  floorChipText: {
-    fontSize: 11,
-    color: "#475569",
-    fontWeight: "600",
-  },
-  changeZoneButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    backgroundColor: "#f3f4f6",
-    borderRadius: 6,
-    marginTop: 6,
-  },
-  changeZoneButtonText: {
-    fontSize: 12,
-    color: "#64748b",
-    fontWeight: "500",
+  modalDeleteText: {
+    color: "#ef4444",
+    fontWeight: "700",
+    fontSize: 14,
   },
 });
