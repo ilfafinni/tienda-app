@@ -470,10 +470,10 @@ export default function MapScreen({ navigation, route }) {
           {/* Resaltar la zona focus (producto escaneado/buscado) */}
           {focusZoneId && (
             <Rect
-              x={zones.find(z) => z.id == focusZoneId}.x - 10}
-              y={zones.find(z) => z.id == focusZoneId}.y - 10}
-              width={zones.find(z) => z.id == focusZoneId}.w + 20}
-              height={zones.find(z) => z.id == focusZoneId}.h + 20}
+              x={zones.find((z) => z.id == focusZoneId)?.x - 10}
+              y={zones.find((z) => z.id == focusZoneId)?.y - 10}
+              width={zones.find((z) => z.id == focusZoneId)?.w + 20}
+              height={zones.find((z) => z.id == focusZoneId)?.h + 20}
               fill="none"
               stroke="#f59e0b"
               strokeWidth={3}
