@@ -1308,12 +1308,33 @@
       if (!container) return;
       const zone = highlightedZoneId ? zones.find(z => z.id === highlightedZoneId) : null;
       if (!zone) { container.innerHTML = ""; return; }
+      const floor = zone.floor || 1;
+      const floorZones = zones.filter(z => (z.floor || 1) === floor);
+      const cx = zone.x + zone.w / 2;
+      const cy = zone.y + zone.h / 2;
       container.innerHTML = `
         <svg viewBox="0 0 1000 800">
           <rect x="0" y="0" width="1000" height="800" fill="#f8fafc" />
-          <rect x="${zone.x}" y="${zone.y}" width="${zone.w}" height="${zone.h}" rx="12" fill="${zone.color || "#3b82f6"}" opacity="0.85" stroke="#0f172a" stroke-width="2.5" />
-          <text x="${zone.x + zone.w / 2}" y="${zone.y + zone.h / 2}" fill="#ffffff" font-size="18" font-weight="900" text-anchor="middle" dominant-baseline="middle">${escapeHtml(zone.name)}</text>
-          <text x="${zone.x + zone.w / 2}" y="${zone.y + zone.h / 2 + 24}" fill="#ffffff" font-size="12" font-weight="700" text-anchor="middle" dominant-baseline="middle">Piso ${zone.floor || 1}</text>
+          ${floorZones.map(z => {
+            const isTarget = z.id === zone.id;
+            const fill = isTarget ? (z.color || "#3b82f6") : "#cbd5e1";
+            const opacity = isTarget ? 0.85 : 0.45;
+            const stroke = isTarget ? "#0f172a" : "#94a3b8";
+            const sw = isTarget ? 2.5 : 1.2;
+            const fs = isTarget ? 14 : 10;
+            const fw = isTarget ? 900 : 600;
+            const tc = isTarget ? "#ffffff" : "#475569";
+            return `
+              <rect x="${z.x}" y="${z.y}" width="${z.w}" height="${z.h}" rx="8" fill="${fill}" opacity="${opacity}" stroke="${stroke}" stroke-width="${sw}" />
+              <text x="${z.x + z.w / 2}" y="${z.y + z.h / 2}" fill="${tc}" font-size="${fs}" font-weight="${fw}" text-anchor="middle" dominant-baseline="middle">${escapeHtml(z.name)}</text>
+            `;
+          }).join("")}
+          <!-- Señalamiento del mueble donde va la prenda -->
+          <circle cx="${cx}" cy="${cy}" r="12" fill="none" stroke="#f59e0b" stroke-width="3">
+            <animate attributeName="r" values="8;20;8" dur="1.2s" repeatCount="indefinite"/>
+            <animate attributeName="opacity" values="1;0.3;1" dur="1.2s" repeatCount="indefinite"/>
+          </circle>
+          <text x="${cx}" y="${cy - 20}" fill="#f59e0b" font-size="12" font-weight="900" text-anchor="middle" dominant-baseline="middle">📍 ${escapeHtml(zone.name)}</text>
         </svg>
         <div style="font-size:11px; color:var(--text-muted); margin-top:6px; text-align:center; font-weight:600;">🗺️ ${escapeHtml(zone.name)} · Piso ${zone.floor || 1}</div>
       `;
