@@ -977,6 +977,22 @@
           <div class="zone-selection-grid" id="zoneSelectionGrid"></div>
         </div>
 
+        <div id="formProdMeterRow" style="display:none;">
+          <div style="display: flex; gap: 8px;">
+            <div class="form-row" style="flex:1;">
+              <label>Metro (posición)</label>
+              <input type="number" id="formProdMeter" min="1" placeholder="Ej: 3">
+            </div>
+            <div class="form-row" style="flex:1; display:none;" id="formProdSideRow">
+              <label>Lado (floorstand)</label>
+              <select id="formProdSide">
+                <option value="frente">Frente</option>
+                <option value="trasero">Trasero</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         <div class="modal-buttons">
           <button type="button" class="btn btn-secondary" style="flex:1;" onclick="closeProductModal()">Cancelar</button>
           <button type="submit" class="btn btn-success" style="flex:2;">💾 Guardar y Ubicar</button>
@@ -999,6 +1015,21 @@
       <div class="form-row">
         <label>Selecciona la nueva ubicación:</label>
         <div class="zone-selection-grid" id="czZoneGrid"></div>
+      </div>
+      <div id="czMeterRow" style="display:none;">
+        <div style="display: flex; gap: 8px;">
+          <div class="form-row" style="flex:1;">
+            <label>Metro (posición)</label>
+            <input type="number" id="czMeter" min="1" placeholder="Ej: 3">
+          </div>
+          <div class="form-row" style="flex:1; display:none;" id="czSideRow">
+            <label>Lado (floorstand)</label>
+            <select id="czSide">
+              <option value="frente">Frente</option>
+              <option value="trasero">Trasero</option>
+            </select>
+          </div>
+        </div>
       </div>
       <div class="form-row">
         <label>Detalle de posición (opcional)</label>
@@ -1455,6 +1486,9 @@
               fill="${fillCol}"></rect>
             <text class="zone-title" x="${cx}" y="${cy - 7}">${escapeHtml(z.name)}</text>
             <text class="zone-count" x="${cx}" y="${cy + 12}">${count} ${count === 1 ? 'prenda' : 'prendas'}</text>
+            ${z.type === "floorstand" ? (z.w >= z.h
+              ? `<line x1="${cx}" y1="${z.y + 4}" x2="${cx}" y2="${z.y + z.h - 4}" stroke="rgba(255,255,255,0.55)" stroke-width="1.5" stroke-dasharray="4,3"/>`
+              : `<line x1="${z.x + 4}" y1="${cy}" x2="${z.x + z.w - 4}" y2="${cy}" stroke="rgba(255,255,255,0.55)" stroke-width="1.5" stroke-dasharray="4,3"/>`) : ''}
             ${currentFloorFilter === "all" && z.floor > 1 ? `
               <rect x="${z.x + 6}" y="${z.y + 6}" width="28" height="18" rx="4" fill="#0f172a" opacity="0.8"></rect>
               <text x="${z.x + 20}" y="${z.y + 19}" fill="#ffffff" font-size="9" font-weight="bold" text-anchor="middle">P${z.floor}</text>
@@ -1884,9 +1918,13 @@
       document.getElementById("formProdShelf").value = "";
       document.getElementById("modalProdHeading").textContent = "Registrar Prenda";
 
+      document.getElementById("formProdMeter").value = "";
+      document.getElementById("formProdSide").value = "frente";
+
       renderZonePicker(prefillZoneId);
       document.getElementById("formProdDetails").style.display = quick ? "none" : "block";
       document.getElementById("formProdCodeRow").style.display = quick ? "none" : "block";
+      updateProductMeterUI();
       document.getElementById("modalProductOverlay").style.display = "flex";
     }
 
@@ -1899,11 +1937,14 @@
       document.getElementById("formProdColor").value = item.color || "";
       document.getElementById("formProdPrice").value = item.price || "";
       document.getElementById("formProdShelf").value = item.shelf_position || "";
+      document.getElementById("formProdMeter").value = item.meter_position || "";
+      document.getElementById("formProdSide").value = item.side || "frente";
       document.getElementById("modalProdHeading").textContent = "Editar Ubicación / Prenda";
 
       renderZonePicker(item.zone_id || null);
       document.getElementById("formProdDetails").style.display = "block";
       document.getElementById("formProdCodeRow").style.display = "block";
+      updateProductMeterUI();
       document.getElementById("modalProductOverlay").style.display = "flex";
     }
 
@@ -1931,6 +1972,7 @@
     function pickZoneChoice(id) {
       selectedModalZoneId = id;
       renderZonePicker(id);
+      updateProductMeterUI();
     }
 
     function renderQuickZonePicker(currentId) {
@@ -1949,6 +1991,16 @@
       `;
     }
 
+    function updateProductMeterUI() {
+      const zone = zones.find(z => z.id === selectedModalZoneId);
+      const row = document.getElementById("formProdMeterRow");
+      const sideRow = document.getElementById("formProdSideRow");
+      if (!zone) { row.style.display = "none"; return; }
+      const isWallOrStand = zone.type === "pared" || zone.type === "floorstand";
+      row.style.display = isWallOrStand ? "block" : "none";
+      sideRow.style.display = (isWallOrStand && zone.type === "floorstand") ? "block" : "none";
+    }
+
     function closeProductModal() {
       document.getElementById("modalProductOverlay").style.display = "none";
     }
@@ -1960,6 +2012,11 @@
       const code = document.getElementById("formProdCode").value.trim().toUpperCase();
       const id = isNew ? (products.length ? Math.max(...products.map(p => p.id)) + 1 : 1) : parseInt(idVal);
 
+      const meter = parseInt(document.getElementById("formProdMeter").value) || null;
+      const side = document.getElementById("formProdSide").value || null;
+      const zone = zones.find(z => z.id === selectedModalZoneId);
+      const isFloorstand = !!(zone && zone.type === "floorstand");
+
       const prod = {
         id,
         code,
@@ -1969,7 +2026,11 @@
         color: document.getElementById("formProdColor").value.trim() || null,
         price: parseFloat(document.getElementById("formProdPrice").value) || 0,
         zone_id: selectedModalZoneId || null,
-        shelf_position: document.getElementById("formProdShelf").value.trim() || null,
+        meter_position: meter,
+        side: isFloorstand ? side : null,
+        shelf_position: meter
+          ? `Metro ${meter}` + (isFloorstand && side ? ` · ${side === "frente" ? "Frente" : "Trasero"}` : "")
+          : (document.getElementById("formProdShelf").value.trim() || null),
       };
 
       if (isNew) {
@@ -2002,15 +2063,28 @@
       const curZone = zones.find(z => z.id === p.zone_id);
       document.getElementById("czProdMeta").textContent = curZone ? `Ubicación actual: ${curZone.name} (Piso ${curZone.floor || 1})` : "Sin mueble asignado";
       document.getElementById("czShelfPos").value = p.shelf_position || "";
+      document.getElementById("czMeter").value = p.meter_position || "";
+      document.getElementById("czSide").value = p.side || "frente";
 
       renderQuickZonePicker(p.zone_id || null);
-
+      updateQuickMeterUI();
       document.getElementById("modalChangeZoneOverlay").style.display = "flex";
     }
 
     function pickQuickZone(id) {
       quickChangeZoneId = id;
       renderQuickZonePicker(id);
+      updateQuickMeterUI();
+    }
+
+    function updateQuickMeterUI() {
+      const zone = zones.find(z => z.id === quickChangeZoneId);
+      const row = document.getElementById("czMeterRow");
+      const sideRow = document.getElementById("czSideRow");
+      if (!zone) { row.style.display = "none"; return; }
+      const isWallOrStand = zone.type === "pared" || zone.type === "floorstand";
+      row.style.display = isWallOrStand ? "block" : "none";
+      sideRow.style.display = (isWallOrStand && zone.type === "floorstand") ? "block" : "none";
     }
 
     function closeChangeZoneModal() {
@@ -2027,8 +2101,17 @@
       const p = products.find(item => item.code === quickChangeCode);
       if (!p) return;
 
+      const zone = zones.find(z => z.id === quickChangeZoneId);
+      const isFloorstand = !!(zone && zone.type === "floorstand");
+      const meter = parseInt(document.getElementById("czMeter").value) || null;
+      const side = document.getElementById("czSide").value || null;
+
       p.zone_id = quickChangeZoneId;
-      p.shelf_position = document.getElementById("czShelfPos").value.trim() || null;
+      p.meter_position = meter;
+      p.side = isFloorstand ? side : null;
+      p.shelf_position = meter
+        ? `Metro ${meter}` + (isFloorstand && side ? ` · ${side === "frente" ? "Frente" : "Trasero"}` : "")
+        : (document.getElementById("czShelfPos").value.trim() || null);
 
       saveToLocalStorage();
       renderProductsList(products);
