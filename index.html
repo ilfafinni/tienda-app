@@ -785,6 +785,7 @@
             <div class="return-actions" style="flex-direction: column;">
               <button class="btn btn-block" onclick="viewTargetOnMap()">🗺️ Ver en el Mapa</button>
               <button class="btn btn-success btn-block" onclick="openReassignModalForScanned()">📍 Cambiar Mueble / Reasignar</button>
+              <button class="btn btn-secondary btn-block" onclick="addToRoute()">➕ Agregar a Ruta</button>
             </div>
           </div>
         </div>
@@ -806,6 +807,20 @@
             ✨ Registrar y Asignar Mueble
           </button>
           <button class="btn btn-secondary btn-block" style="margin-top:8px;" onclick="openLinkProductModal()">🔗 Vincular a producto existente</button>
+        </div>
+        <!-- RUTA DE DEVOLUCIÓN -->
+        <div class="route-card" id="cardRoute" style="display:none; margin-top:12px;">
+          <div class="return-target-header" style="background: linear-gradient(135deg, #10b981, #059669);">
+            <div class="label">🗺️ Ruta de Devolución</div>
+            <div class="zone-name" id="routeCount">0 prendas</div>
+            <div class="subdetail">Orden sugerido por piso y mueble</div>
+          </div>
+          <div class="return-target-body">
+            <div id="routeList"></div>
+            <div class="return-actions" style="margin-top:10px;">
+              <button class="btn btn-block" onclick="clearRoute()">🗑️ Limpiar Ruta</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -1127,6 +1142,7 @@
     const SERVER_URL = "https://tienda-server-clone.vercel.app";
     const LS_ZONES = "tienda_zones_v2";
     const LS_PRODS = "tienda_products_v2";
+    const LS_ROUTE = "tienda_route_v1";
 
     let zones = [];
     let products = [];
@@ -1137,6 +1153,7 @@
     let selectedZoneForEdit = null;
     let highlightedZoneId = null;
     let currentlyScannedItem = null;
+    let routeItems = [];
 
     // Map Pan/Zoom state
     let mapScale = 1;
@@ -1164,6 +1181,10 @@
       renderMap();
       renderProductsList(products);
       syncServerData();
+
+      // Cargar ruta de devolución guardada
+      try { routeItems = JSON.parse(localStorage.getItem(LS_ROUTE) || "[]"); } catch (e) { routeItems = []; }
+      renderRoute();
 
       // Auto-sincronización periódica cada 20 segundos
       setInterval(syncServerData, 20000);
@@ -1333,7 +1354,7 @@
         html5QrScanner = new Html5Qrcode("cameraContainer");
         await html5QrScanner.start(
           { facingMode: "environment" },
-          { fps: 20, qrbox: { width: 200, height: 200 } },
+          { fps: 20 },
           (decoded) => {
             triggerVibrate([80, 50, 80]);
             document.getElementById("manualCodeInput").value = decoded;
@@ -2431,6 +2452,18 @@
       renderMap();
       closeChangeZoneModal();
 
+      // Actualizar la ruta si el producto estaba en ella
+      const ri = routeItems.find(r => r.code === (p.code || "").toUpperCase());
+      if (ri) {
+        const z = zones.find(x => x.id === p.zone_id);
+        ri.zone_id = p.zone_id;
+        ri.zone_name = z ? z.name : "Sin mueble";
+        ri.floor = z ? (z.floor || 1) : 1;
+        ri.shelf_position = p.shelf_position;
+        saveRoute();
+        renderRoute();
+      }
+
       await pushProductToServer(p);
       processScannedCode(p.code);
 
@@ -2507,6 +2540,77 @@
       if (window.navigator && window.navigator.vibrate) {
         window.navigator.vibrate(pattern);
       }
+    }
+
+    function addToRoute() {
+      if (!currentlyScannedItem || !currentlyScannedItem.code) return;
+      const item = currentlyScannedItem;
+      const code = (item.code || "").toUpperCase();
+      if (!code) return;
+      if (!item.zone_id) {
+        alert("Primero asigna un mueble a esta prenda para poder agregarla a la ruta.");
+        return;
+      }
+      if (routeItems.some(r => r.code === code)) {
+        alert("Esta prenda ya está en la ruta.");
+        return;
+      }
+      const zone = zones.find(z => z.id === item.zone_id);
+      routeItems.push({
+        code: code,
+        name: item.name || code,
+        zone_id: item.zone_id,
+        zone_name: zone ? zone.name : "Sin mueble",
+        floor: zone ? (zone.floor || 1) : 1,
+        shelf_position: item.shelf_position || null,
+      });
+      saveRoute();
+      renderRoute();
+    }
+
+    function renderRoute() {
+      const card = document.getElementById("cardRoute");
+      const list = document.getElementById("routeList");
+      const count = document.getElementById("routeCount");
+      if (!card || !list || !count) return;
+      if (!routeItems.length) {
+        card.style.display = "none";
+        return;
+      }
+      card.style.display = "block";
+      count.textContent = `${routeItems.length} ${routeItems.length === 1 ? 'prenda' : 'prendas'}`;
+      const sorted = [...routeItems].sort((a, b) => {
+        if (a.floor !== b.floor) return a.floor - b.floor;
+        if (a.zone_name !== b.zone_name) return a.zone_name.localeCompare(b.zone_name);
+        return a.code.localeCompare(b.code);
+      });
+      let html = "";
+      let currentFloor = null;
+      sorted.forEach((r, idx) => {
+        if (r.floor !== currentFloor) {
+          currentFloor = r.floor;
+          html += `<div style="font-weight:900; font-size:12px; color:var(--primary); margin:10px 0 4px; padding-top:6px; border-top:1px solid var(--border);">Piso ${r.floor}</div>`;
+        }
+        html += `
+          <div class="sheet-prod-item" style="padding:6px 0;">
+            <div class="info">
+              <strong>${idx + 1}. ${escapeHtml(r.name)}</strong>
+              <span>${escapeHtml(r.code)} · 📍 ${escapeHtml(r.zone_name)}${r.shelf_position ? ` · ${escapeHtml(r.shelf_position)}` : ''}</span>
+            </div>
+          </div>
+        `;
+      });
+      list.innerHTML = html;
+    }
+
+    function clearRoute() {
+      routeItems = [];
+      saveRoute();
+      renderRoute();
+    }
+
+    function saveRoute() {
+      try { localStorage.setItem(LS_ROUTE, JSON.stringify(routeItems)); } catch (e) {}
     }
 
     function escapeHtml(str) {
