@@ -938,12 +938,12 @@
 
   <!-- ================= MODAL: CREAR / ASIGNAR PRODUCTO ================= -->
   <div class="modal-overlay" id="modalProductOverlay">
-    <div class="modal-window">
-      <h2>
+    <div class="modal-window" style="display:flex; flex-direction:column; max-height:98vh;">
+      <h2 style="flex:0 0 auto; margin-bottom:6px;">
         <span id="modalProdHeading">Registrar Prenda</span>
         <button class="btn btn-small btn-secondary" onclick="closeProductModal()">✕</button>
       </h2>
-      <form id="formProduct" onsubmit="handleProductSubmit(event)">
+      <form id="formProduct" onsubmit="handleProductSubmit(event)" style="display:flex; flex-direction:column; flex:1 1 auto; overflow-y:auto;">
         <input type="hidden" id="formProdId">
         <div id="formProdCodeRow">
         <div class="form-row">
@@ -1000,23 +1000,23 @@
         </div>
         </div>
 
-        <div class="floor-selector-bar" id="prodFloorBar" style="margin-bottom:8px;">
+        <div class="floor-selector-bar" id="prodFloorBar" style="flex:0 0 auto; margin-bottom:6px;">
           <button class="floor-pill" id="prodFloor-1" onclick="setProductZoneFloor(1)">Piso 1</button>
           <button class="floor-pill" id="prodFloor-2" onclick="setProductZoneFloor(2)">Piso 2</button>
           <button class="floor-pill" id="prodFloor-3" onclick="setProductZoneFloor(3)">Piso 3</button>
         </div>
-        <div class="form-row">
-          <label>🗺️ ¿En qué Mueble / Zona de la Tienda va?</label>
-          <div class="zone-selection-grid" id="zoneSelectionGrid"></div>
+        <div class="form-row" style="flex:1 1 auto; min-height:40vh; display:flex; flex-direction:column; margin-bottom:0;">
+          <label style="flex:0 0 auto;">🗺️ ¿En qué Mueble / Zona de la Tienda va?</label>
+          <div class="zone-selection-grid" id="zoneSelectionGrid" style="flex:1 1 auto; min-height:0; overflow:hidden;"></div>
         </div>
 
-        <div id="formProdMeterRow" style="display:none;">
+        <div id="formProdMeterRow" style="flex:0 0 auto; display:none;">
           <div style="display: flex; gap: 8px;">
-            <div class="form-row" style="flex:1;">
+            <div class="form-row" style="flex:1; margin-bottom:0;">
               <label>Metro (posición)</label>
               <input type="number" id="formProdMeter" min="1" placeholder="Ej: 3">
             </div>
-            <div class="form-row" style="flex:1; display:none;" id="formProdSideRow">
+            <div class="form-row" style="flex:1; margin-bottom:0; display:none;" id="formProdSideRow">
               <label>Lado (floorstand)</label>
               <select id="formProdSide">
                 <option value="frente">Frente</option>
@@ -1026,7 +1026,7 @@
           </div>
         </div>
 
-        <div class="modal-buttons">
+        <div class="modal-buttons" style="flex:0 0 auto; margin-top:6px;">
           <button type="button" class="btn btn-secondary" style="flex:1;" onclick="closeProductModal()">Cancelar</button>
           <button type="submit" class="btn btn-success" style="flex:2;">💾 Guardar y Ubicar</button>
         </div>
@@ -2109,7 +2109,7 @@
         }
       }
       container.innerHTML = `
-        <svg viewBox="0 0 1000 800" style="width:100%; height:auto; border:1px solid var(--border); border-radius:10px; background:#f8fafc;">
+        <svg viewBox="0 0 1000 800" preserveAspectRatio="xMidYMid slice" style="width:100%; height:100%; border:1px solid var(--border); border-radius:10px; background:#f8fafc;">
           ${floorZones.map(z => `
             <g onclick="handleZoneMapClick(event, ${z.id}, 'product')" style="cursor:pointer;">
               <rect x="${z.x}" y="${z.y}" width="${z.w}" height="${z.h}" rx="8" fill="${z.id === currentId ? (z.color || '#3b82f6') : '#cbd5e1'}" opacity="${z.id === currentId ? 0.9 : 0.6}" stroke="#0f172a" stroke-width="1.5" />
