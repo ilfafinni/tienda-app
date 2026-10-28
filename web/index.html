@@ -1023,9 +1023,9 @@
           <button class="floor-pill" id="prodFloor-3" onclick="setProductZoneFloor(3)">Piso 3</button>
           <button class="floor-pill" onclick="centerModalMap('zoneSelectionGrid')" style="min-width:40px;">🎯</button>
         </div>
-        <div class="form-row" style="flex:0 0 auto; min-height:50vh; display:flex; flex-direction:column; margin-bottom:0;">
-          <label style="flex:0 0 auto;">🗺️ ¿En qué Mueble / Zona de la Tienda va?</label>
-          <div class="zone-selection-grid" id="zoneSelectionGrid" style="flex:1 1 auto; min-height:0; overflow:hidden;"></div>
+        <div class="form-row" style="flex:0 0 auto; margin-bottom:0;">
+          <label>🗺️ ¿En qué Mueble / Zona de la Tienda va?</label>
+          <div class="zone-selection-grid" id="zoneSelectionGrid" style="height:50vh; min-height:300px; overflow:hidden;"></div>
         </div>
 
         <div id="formProdMeterRow" style="flex:0 0 auto; display:none;">
@@ -2395,9 +2395,10 @@
 
       renderZonePicker(prefillZoneId);
       centerModalMap('zoneSelectionGrid');
-      document.getElementById("modalProdHeading").textContent = 'Registrar Prenda (tx=' + modalMapState.zoneSelectionGrid.tx + ')';
+      document.getElementById("formProdDetails").style.display = quick ? "none" : "block";
       document.getElementById("formProdCodeRow").style.display = quick ? "none" : "block";
       updateProductMeterUI();
+      document.getElementById("modalProdHeading").textContent = "Registrar Prenda";
       document.getElementById("modalProductOverlay").style.display = "flex";
     }
 
@@ -2772,8 +2773,8 @@
       const cx = (minX + maxX) / 2;
       const cy = (minY + maxY) / 2;
       st.scale = 1;
-      st.tx = 300;
-      st.ty = 200;
+      st.tx = 500 - cx;
+      st.ty = 400 - cy;
       applyModalMapTransform(containerId);
     }
 
