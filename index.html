@@ -1219,7 +1219,7 @@
     let html5QrScanner = null;
     let isCameraRunning = false;
     let lastScannedCode = null;
-    let lastScannedProductId = null;
+    let scanLockUntil = 0;
     let torchOn = false;
     let zoomOn = false;
     let availableCameras = [];
@@ -1683,14 +1683,12 @@
         return codes.some(c => (c || "").toUpperCase() === norm);
       });
 
-      // Dedupe por producto: una etiqueta con varios códigos debe leerse como UN solo producto.
-      // Si ya procesamos este producto (cualquier código suyo), ignorar escaneos repetidos.
-      if (found && found.id === lastScannedProductId) return;
+      // Bloqueo de escaneo: tras encontrar un producto, ignorar nuevos escaneos por 2s.
+      // Así una etiqueta con varios códigos de barras solo genera UN resultado (no 3).
+      const now = Date.now();
+      if (now < scanLockUntil) return;
       if (found) {
-        lastScannedProductId = found.id;
-        // Resetear dedupe tras 2s para poder re-escánear el mismo producto más tarde
-        clearTimeout(window._scanDedupeTimer);
-        window._scanDedupeTimer = setTimeout(() => { lastScannedProductId = null; }, 2000);
+        scanLockUntil = Date.now() + 2000;
       }
 
       if (found) {
