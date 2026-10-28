@@ -1476,13 +1476,31 @@
     function renderMap() {
       const g = document.getElementById("zonesGroup");
       const beaconG = document.getElementById("beaconGroup");
+      const svg = document.getElementById("storeSvg");
       if (!g) return;
 
-      const visibleZones = currentFloorFilter === "all"
-        ? zones
-        : zones.filter(z => (z.floor || 1) == currentFloorFilter);
+      const isAll = currentFloorFilter === "all";
+      const maxFloor = isAll ? Math.max(1, ...zones.map(z => z.floor || 1)) : 1;
+      const viewBoxH = 800 * maxFloor;
+      if (svg) svg.setAttribute("viewBox", `0 0 1000 ${viewBoxH}`);
+      const bgRect = svg ? svg.querySelector('rect[fill="url(#grid)"]') : null;
+      if (bgRect) bgRect.setAttribute("height", viewBoxH);
 
-      g.innerHTML = visibleZones.map(z => {
+      const visibleZones = (isAll ? zones : zones.filter(z => (z.floor || 1) == currentFloorFilter))
+        .map(z => {
+          const floor = z.floor || 1;
+          const offsetY = isAll ? (floor - 1) * 800 : 0;
+          return { ...z, y: z.y + offsetY, _floor: floor };
+        });
+
+      const floorLabels = isAll ? Array.from({ length: maxFloor }, (_, i) => {
+        const f = i + 1;
+        const y = i * 800;
+        const sep = i > 0 ? `<line x1="0" y1="${y}" x2="1000" y2="${y}" stroke="#94a3b8" stroke-width="2" stroke-dasharray="10,6" opacity="0.7"/>` : "";
+        return `${sep}<text x="12" y="${y + 22}" fill="#64748b" font-size="16" font-weight="900" opacity="0.85">PISO ${f}</text>`;
+      }).join("") : "";
+
+      g.innerHTML = floorLabels + visibleZones.map(z => {
         const isHighlight = z.id === highlightedZoneId;
         const isDragging = z.id === draggingZoneId;
         const count = products.filter(p => p.zone_id === z.id).length;
@@ -1501,9 +1519,9 @@
             ${z.type === "floorstand" ? (z.w >= z.h
               ? `<line x1="${cx}" y1="${z.y + 4}" x2="${cx}" y2="${z.y + z.h - 4}" stroke="rgba(255,255,255,0.55)" stroke-width="1.5" stroke-dasharray="4,3"/>`
               : `<line x1="${z.x + 4}" y1="${cy}" x2="${z.x + z.w - 4}" y2="${cy}" stroke="rgba(255,255,255,0.55)" stroke-width="1.5" stroke-dasharray="4,3"/>`) : ''}
-            ${currentFloorFilter === "all" && z.floor > 1 ? `
+            ${currentFloorFilter === "all" && z._floor > 1 ? `
               <rect x="${z.x + 6}" y="${z.y + 6}" width="28" height="18" rx="4" fill="#0f172a" opacity="0.8"></rect>
-              <text x="${z.x + 20}" y="${z.y + 19}" fill="#ffffff" font-size="9" font-weight="bold" text-anchor="middle">P${z.floor}</text>
+              <text x="${z.x + 20}" y="${z.y + 19}" fill="#ffffff" font-size="9" font-weight="bold" text-anchor="middle">P${z._floor}</text>
             ` : ''}
           </g>
         `;
@@ -1567,12 +1585,14 @@
         renderMap();
       }
 
-      // Centrar suavemente en la zona en viewBox de 1000x800
+      const floor = z.floor || 1;
+      const offsetY = (currentFloorFilter === "all") ? (floor - 1) * 800 : 0;
+      const viewBoxH = (currentFloorFilter === "all") ? 800 * Math.max(1, ...zones.map(x => x.floor || 1)) : 800;
       const targetCx = z.x + z.w / 2;
-      const targetCy = z.y + z.h / 2;
+      const targetCy = z.y + offsetY + z.h / 2;
       mapScale = 1.45;
       mapTx = 500 - targetCx * mapScale;
-      mapTy = 400 - targetCy * mapScale;
+      mapTy = (viewBoxH / 2) - targetCy * mapScale;
       applyMapTransform();
 
       showZoneDetailSheet(z);
@@ -1826,7 +1846,9 @@
       document.getElementById("formZoneName").value = "";
       document.getElementById("formZoneType").value = "floorstand";
       document.getElementById("formZoneColor").value = "#3b82f6";
-      document.getElementById("formZoneFloor").value = currentFloorFilter === "all" ? "1" : String(currentFloorFilter);
+      document.getElementById("formZoneFloor").value = currentFloorFilter === "all"
+        ? String(Math.min(3, Math.max(1, Math.floor((y || 0) / 800) + 1)))
+        : String(currentFloorFilter);
       document.getElementById("modalZoneHeading").textContent = "Nuevo Mueble / Zona";
       document.getElementById("btnDeleteZone").style.display = "none";
       document.getElementById("modalZoneOverlay").style.display = "flex";
