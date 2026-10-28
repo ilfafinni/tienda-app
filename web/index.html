@@ -908,6 +908,7 @@
           <label>Código de Barras / Etiqueta</label>
           <input type="text" id="formProdCode" required placeholder="Ej: PNT-001 o número de código">
         </div>
+        <div id="formProdDetails">
         <div class="form-row">
           <label>Nombre del Producto</label>
           <input type="text" id="formProdName" placeholder="Ej: Pantalón Cargo Negro">
@@ -943,13 +944,14 @@
         </div>
 
         <div class="form-row">
-          <label>🗺️ ¿En qué Mueble / Zona de la Tienda va?</label>
-          <div class="zone-selection-grid" id="zoneSelectionGrid"></div>
+          <label>Detalle de Posición (opcional)</label>
+          <input type="text" id="formProdShelf" placeholder="Ej: Fila 2, Perchero Frontal, Estante Superior">
+        </div>
         </div>
 
         <div class="form-row">
-          <label>Detalle de Posición (opcional)</label>
-          <input type="text" id="formProdShelf" placeholder="Ej: Fila 2, Perchero Frontal, Estante Superior">
+          <label>🗺️ ¿En qué Mueble / Zona de la Tienda va?</label>
+          <div class="zone-selection-grid" id="zoneSelectionGrid"></div>
         </div>
 
         <div class="modal-buttons">
@@ -1148,7 +1150,14 @@
           const srvProds = await resP.json();
 
           if (Array.isArray(srvZones) && srvZones.length > 0) zones = srvZones;
-          if (Array.isArray(srvProds) && srvProds.length > 0) products = srvProds;
+          if (Array.isArray(srvProds)) {
+            const mergedProds = [...srvProds];
+            products.forEach(p => {
+              const c = (p.code || "").toUpperCase();
+              if (!srvProds.some(sp => (sp.code || "").toUpperCase() === c)) mergedProds.push(p);
+            });
+            products = mergedProds;
+          }
 
           saveToLocalStorage();
           renderMap();
@@ -1353,7 +1362,7 @@
     }
 
     function openNewProductForScanned() {
-      openNewProductModal(currentlyScannedItem ? currentlyScannedItem.code : "");
+      openNewProductModal(currentlyScannedItem ? currentlyScannedItem.code : "", null, true);
     }
 
     // ================= MAPA: RENDERING & PISOS =================
@@ -1690,7 +1699,7 @@
 
     function addProdToCurrentZone() {
       if (!selectedZoneForEdit) return;
-      openNewProductModal("", selectedZoneForEdit.id);
+      openNewProductModal("", selectedZoneForEdit.id, true);
     }
 
     // ================= CRUD ZONAS (MUEBLES) =================
@@ -1804,7 +1813,7 @@
     // ================= CRUD PRODUCTOS & REASIGNAR =================
     let selectedModalZoneId = null;
 
-    function openNewProductModal(prefillCode = "", prefillZoneId = null) {
+    function openNewProductModal(prefillCode = "", prefillZoneId = null, quick = false) {
       document.getElementById("formProdId").value = "";
       document.getElementById("formProdCode").value = prefillCode;
       document.getElementById("formProdName").value = "";
@@ -1816,6 +1825,7 @@
       document.getElementById("modalProdHeading").textContent = "Registrar Prenda";
 
       renderZonePicker(prefillZoneId);
+      document.getElementById("formProdDetails").style.display = quick ? "none" : "block";
       document.getElementById("modalProductOverlay").style.display = "flex";
     }
 
@@ -1831,6 +1841,7 @@
       document.getElementById("modalProdHeading").textContent = "Editar Ubicación / Prenda";
 
       renderZonePicker(item.zone_id || null);
+      document.getElementById("formProdDetails").style.display = "block";
       document.getElementById("modalProductOverlay").style.display = "flex";
     }
 
