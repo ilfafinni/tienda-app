@@ -2249,6 +2249,7 @@
 
       changeZoneFloor = p.zone_id ? (zones.find(z => z.id === p.zone_id)?.floor || 1) : 1;
       setChangeZoneFloor(changeZoneFloor);
+      document.getElementById("modalChangeZoneOverlay").style.display = "flex";
     }
 
     function pickQuickZone(id) {
