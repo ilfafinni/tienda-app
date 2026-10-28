@@ -207,6 +207,7 @@
       display: none;
       background: #000;
       border: 2px solid var(--primary);
+      position: relative;
     }
     #cameraContainer video {
       width: 100% !important;
@@ -742,16 +743,17 @@
             Apunta con la cámara o ingresa el código para saber a qué mueble devolverlo.
           </div>
 
-          <div id="cameraContainer"></div>
+          <div id="cameraContainer">
+            <div id="cameraExtraControls" style="display: none; position: absolute; bottom: 8px; left: 8px; right: 8px; gap: 8px; z-index: 5;">
+              <button class="btn btn-secondary btn-block" id="btnTorch" onclick="toggleTorch()">🔦 Linterna</button>
+              <button class="btn btn-secondary btn-block" id="btnZoom" onclick="toggleZoom()">🔍 Zoom 2x</button>
+            </div>
+          </div>
 
           <div style="display: flex; gap: 8px; margin-top: 10px;">
             <button class="btn btn-success btn-block" id="btnCamToggle" onclick="toggleScannerCamera()">
               📷 Activar Cámara
             </button>
-          </div>
-          <div id="cameraExtraControls" style="display: none; gap: 8px; margin-top: 8px;">
-            <button class="btn btn-secondary btn-block" id="btnTorch" onclick="toggleTorch()">🔦 Linterna</button>
-            <button class="btn btn-secondary btn-block" id="btnZoom" onclick="toggleZoom()">🔍 Zoom 2x</button>
           </div>
 
           <div class="scan-input-group">
@@ -1373,28 +1375,53 @@
       btn.textContent = "⏳ Iniciando cámara...";
 
       try {
-        html5QrScanner = new Html5Qrcode("cameraContainer");
-        await html5QrScanner.start(
-          { facingMode: "environment" },
-          {
-            fps: 20,
-            videoConstraints: {
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-              advanced: [{ focusMode: "continuous" }]
+        // Intentar seleccionar explícitamente la cámara trasera (evita que se use la frontal)
+        let backCameraId = null;
+        try {
+          if (typeof Html5Qrcode.getCameras === "function") {
+            const cams = await Html5Qrcode.getCameras();
+            if (Array.isArray(cams) && cams.length) {
+              const back = cams.find(c => /back|rear|environment|trasera|tr[aá]s/i.test(c.label || ""));
+              if (back) backCameraId = back.id;
+              else if (cams.length > 1) backCameraId = cams[cams.length - 1].id;
             }
-          },
-          (decoded) => {
-            triggerVibrate([80, 50, 80]);
-            document.getElementById("manualCodeInput").value = decoded;
-            const norm = decoded.trim().toUpperCase();
-            if (norm !== lastScannedCode) {
-              lastScannedCode = norm;
-              processScannedCode(decoded);
-            }
-          },
-          () => {}
-        );
+          }
+        } catch (e) { console.warn("getCameras failed", e); }
+
+        const cfgs = [
+          { fps: 20, videoConstraints: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 }, advanced: [{ focusMode: "continuous" }] } },
+          { fps: 20, videoConstraints: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } },
+          { fps: 20, videoConstraints: { facingMode: "environment" } },
+          { fps: 20 }
+        ];
+        let started = false;
+        for (const cfg of cfgs) {
+          try {
+            html5QrScanner = new Html5Qrcode("cameraContainer");
+            const camConfig = backCameraId ? backCameraId : { facingMode: "environment" };
+            await html5QrScanner.start(
+              camConfig,
+              cfg,
+              (decoded) => {
+                triggerVibrate([80, 50, 80]);
+                document.getElementById("manualCodeInput").value = decoded;
+                const norm = decoded.trim().toUpperCase();
+                if (norm !== lastScannedCode) {
+                  lastScannedCode = norm;
+                  processScannedCode(decoded);
+                }
+              },
+              () => {}
+            );
+            started = true;
+            break;
+          } catch (e) {
+            console.warn("camera start failed with", cfg, e);
+            try { if (html5QrScanner) html5QrScanner.clear(); } catch (e2) {}
+            html5QrScanner = null;
+          }
+        }
+        if (!started) throw new Error("No se pudo iniciar la camara");
         isCameraRunning = true;
         btn.textContent = "🛑 Detener Cámara";
         btn.classList.replace("btn-success", "btn-secondary");
