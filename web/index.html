@@ -1683,13 +1683,11 @@
         return codes.some(c => (c || "").toUpperCase() === norm);
       });
 
-      // Bloqueo de escaneo: tras encontrar un producto, ignorar nuevos escaneos por 2s.
-      // Así una etiqueta con varios códigos de barras solo genera UN resultado (no 3).
+      // Bloqueo de escaneo: tras cualquier lectura, ignorar nuevos escaneos por 3s.
+      // Así una etiqueta con varios códigos de barras solo genera UN resultado (no varios).
       const now = Date.now();
       if (now < scanLockUntil) return;
-      if (found) {
-        scanLockUntil = Date.now() + 2000;
-      }
+      scanLockUntil = Date.now() + 3000;
 
       if (found) {
         currentlyScannedItem = found;
