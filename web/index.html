@@ -951,8 +951,9 @@
         <span id="modalProdHeading">Registrar Prenda</span>
         <button class="btn btn-small btn-secondary" onclick="closeProductModal()">✕</button>
       </h2>
-      <form id="formProduct" onsubmit="handleProductSubmit(event)" style="display:flex; flex-direction:column; flex:1 1 auto; overflow-y:auto;">
+      <form id="formProduct" onsubmit="handleProductSubmit(event)" style="display:flex; flex-direction:column; flex:1 1 auto; overflow:hidden; min-height:0;">
         <input type="hidden" id="formProdId">
+        <div style="flex:1 1 auto; overflow-y:auto; min-height:0; display:flex; flex-direction:column;">
         <div id="formProdCodeRow">
         <div class="form-row">
           <label>Código de Barras / Etiqueta</label>
@@ -1033,6 +1034,7 @@
             </div>
           </div>
         </div>
+        </div>
 
         <div class="modal-buttons" style="flex:0 0 auto; margin-top:6px;">
           <button type="button" class="btn btn-secondary" style="flex:1;" onclick="closeProductModal()">Cancelar</button>
@@ -1044,7 +1046,7 @@
 
   <!-- ================= MODAL: CAMBIAR MUEBLE RÁPIDO ================= -->
   <div class="modal-overlay" id="modalChangeZoneOverlay">
-    <div class="modal-window" style="display:flex; flex-direction:column; height:98vh; max-height:98vh; padding:12px;">
+    <div class="modal-window" style="display:flex; flex-direction:column; height:98vh; max-height:98vh; padding:12px; overflow:hidden;">
       <h2 style="flex:0 0 auto; margin-bottom:6px;">
         <span>Cambiar Mueble</span>
         <button class="btn btn-small btn-secondary" onclick="closeChangeZoneModal()">✕</button>
