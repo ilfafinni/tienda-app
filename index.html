@@ -784,6 +784,10 @@
                 <span>Código</span>
                 <strong id="targetProdCode">-</strong>
               </div>
+              <div class="attr" style="grid-column: 1 / -1;">
+                <span>Códigos vinculados</span>
+                <strong id="targetProdCodes">-</strong>
+              </div>
               <div class="attr">
                 <span>Producto</span>
                 <strong id="targetProdName">-</strong>
@@ -1682,7 +1686,12 @@
       // Dedupe por producto: una etiqueta con varios códigos debe leerse como UN solo producto.
       // Si ya procesamos este producto (cualquier código suyo), ignorar escaneos repetidos.
       if (found && found.id === lastScannedProductId) return;
-      if (found) lastScannedProductId = found.id;
+      if (found) {
+        lastScannedProductId = found.id;
+        // Resetear dedupe tras 2s para poder re-escánear el mismo producto más tarde
+        clearTimeout(window._scanDedupeTimer);
+        window._scanDedupeTimer = setTimeout(() => { lastScannedProductId = null; }, 2000);
+      }
 
       if (found) {
         currentlyScannedItem = found;
@@ -1696,6 +1705,10 @@
           document.getElementById("targetZoneDetail").textContent = (zone ? `Piso ${zone.floor || 1}` : "") + (found.shelf_position ? ` · ${found.shelf_position}` : "");
           document.getElementById("targetProdCode").textContent = found.code;
           document.getElementById("targetProdName").textContent = (found.name && found.name !== found.code) ? found.name : "Prenda sin nombre";
+          // Mostrar todos los códigos del producto para que se vea la conexión (una prenda = varios códigos)
+          const allCodes = (found.codes && found.codes.length) ? found.codes.filter(Boolean) : [found.code];
+          document.getElementById("targetProdCodes").textContent = allCodes.join(" · ");
+          document.getElementById("targetProdCodes").parentElement.style.display = allCodes.length > 1 ? "" : "none";
           document.getElementById("targetProdMeta").textContent = `${found.size || "-"} / ${found.color || "-"}`;
           document.getElementById("targetProdPrice").textContent = `$${(found.price || 0).toLocaleString("es-CL")}`;
 
