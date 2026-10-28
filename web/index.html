@@ -1377,32 +1377,18 @@
       btn.textContent = "⏳ Iniciando cámara...";
 
       try {
-        // Intentar seleccionar explícitamente la cámara trasera (evita que se use la frontal)
-        let backCameraId = null;
-        try {
-          if (typeof Html5Qrcode.getCameras === "function") {
-            const cams = await Html5Qrcode.getCameras();
-            if (Array.isArray(cams) && cams.length) {
-              const back = cams.find(c => /back|rear|environment|trasera|tr[aá]s/i.test(c.label || ""));
-              if (back) backCameraId = back.id;
-              else if (cams.length > 1) backCameraId = cams[cams.length - 1].id;
-            }
-          }
-        } catch (e) { console.warn("getCameras failed", e); }
-
-        const cfgs = [
-          { fps: 20, videoConstraints: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 }, advanced: [{ focusMode: "continuous" }] } },
-          { fps: 20, videoConstraints: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } },
-          { fps: 20, videoConstraints: { facingMode: "environment" } },
-          { fps: 20 }
-        ];
+        // Ruta rápida: iniciar con la config más simple (sin enumerar cámaras ni constraints pesadas).
+        // La enumeración de cámaras (getCameras) es lenta y bloquea; solo se usa como fallback.
         let started = false;
-        for (const cfg of cfgs) {
+        const fastCfgs = [
+          { fps: 20 },
+          { fps: 20, videoConstraints: { facingMode: "environment" } }
+        ];
+        for (const cfg of fastCfgs) {
           try {
             html5QrScanner = new Html5Qrcode("cameraContainer");
-            const camConfig = backCameraId ? backCameraId : { facingMode: "environment" };
             await html5QrScanner.start(
-              camConfig,
+              { facingMode: "environment" },
               cfg,
               (decoded) => {
                 triggerVibrate([80, 50, 80]);
@@ -1418,16 +1404,54 @@
             started = true;
             break;
           } catch (e) {
-            console.warn("camera start failed with", cfg, e);
+            console.warn("camera start failed (fast) with", cfg, e);
             try { if (html5QrScanner) html5QrScanner.clear(); } catch (e2) {}
             html5QrScanner = null;
+          }
+        }
+        // Fallback: enumerar cámaras y elegir la trasera (más lento, solo si lo anterior falla)
+        if (!started) {
+          let backCameraId = null;
+          try {
+            if (typeof Html5Qrcode.getCameras === "function") {
+              const cams = await Html5Qrcode.getCameras();
+              if (Array.isArray(cams) && cams.length) {
+                const back = cams.find(c => /back|rear|environment|trasera/i.test(c.label || ""));
+                if (back) backCameraId = back.id;
+                else if (cams.length > 1) backCameraId = cams[cams.length - 1].id;
+                else backCameraId = cams[0].id;
+              }
+            }
+          } catch (e) { console.warn("getCameras failed", e); }
+          if (backCameraId) {
+            try {
+              html5QrScanner = new Html5Qrcode("cameraContainer");
+              await html5QrScanner.start(
+                backCameraId,
+                { fps: 20 },
+                (decoded) => {
+                  triggerVibrate([80, 50, 80]);
+                  document.getElementById("manualCodeInput").value = decoded;
+                  const norm = decoded.trim().toUpperCase();
+                  if (norm !== lastScannedCode) {
+                    lastScannedCode = norm;
+                    processScannedCode(decoded);
+                  }
+                },
+                () => {}
+              );
+              started = true;
+            } catch (e) {
+              console.warn("back camera start failed", e);
+              try { if (html5QrScanner) html5QrScanner.clear(); } catch (e2) {}
+              html5QrScanner = null;
+            }
           }
         }
         if (!started) throw new Error("No se pudo iniciar la camara");
         isCameraRunning = true;
         btn.textContent = "🛑 Detener Cámara";
         btn.classList.replace("btn-success", "btn-secondary");
-        // Mostrar controles extra (linterna/zoom)
         const extra = document.getElementById("cameraExtraControls");
         if (extra) extra.style.display = "flex";
         torchOn = false;
@@ -1436,15 +1460,20 @@
         const btnZoom = document.getElementById("btnZoom");
         if (btnTorch) { btnTorch.textContent = "🔦 Linterna"; btnTorch.style.display = ""; }
         if (btnZoom) { btnZoom.textContent = "🔍 Zoom 2x"; btnZoom.style.display = ""; }
-        // Verificar soporte de linterna
-        try {
-          const caps = (typeof html5QrScanner.getRunningTrackCapabilities === "function") ? html5QrScanner.getRunningTrackCapabilities() : null;
-          if (!caps || !caps.torch) {
+        // Mejoras de precisión en segundo plano (no bloquean el inicio)
+        (async () => {
+          try {
+            await html5QrScanner.applyVideoConstraints({ width: { ideal: 1280 }, height: { ideal: 720 }, advanced: [{ focusMode: "continuous" }] });
+          } catch (e) { console.warn("enhance failed", e); }
+          try {
+            const caps = (typeof html5QrScanner.getRunningTrackCapabilities === "function") ? html5QrScanner.getRunningTrackCapabilities() : null;
+            if (!caps || !caps.torch) {
+              if (btnTorch) btnTorch.style.display = "none";
+            }
+          } catch (e) {
             if (btnTorch) btnTorch.style.display = "none";
           }
-        } catch (e) {
-          if (btnTorch) btnTorch.style.display = "none";
-        }
+        })();
       } catch (e) {
         console.error(e);
         box.style.display = "none";
@@ -1453,6 +1482,7 @@
         alert("No se pudo acceder a la cámara. Asegúrate de dar permisos o escribe el código manualmente.");
       }
     }
+
 
     function stopScannerCamera() {
       if (html5QrScanner && isCameraRunning) {
