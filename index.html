@@ -1203,7 +1203,13 @@
           const srvZones = await resZ.json();
           const srvProds = await resP.json();
 
-          if (Array.isArray(srvZones) && srvZones.length > 0) zones = srvZones;
+          if (Array.isArray(srvZones) && srvZones.length > 0) {
+            const mergedZones = [...srvZones];
+            zones.forEach(z => {
+              if (!srvZones.some(sz => sz.id === z.id)) mergedZones.push(z);
+            });
+            zones = mergedZones;
+          }
           if (Array.isArray(srvProds)) {
             const mergedProds = [...srvProds];
             products.forEach(p => {
@@ -1888,11 +1894,12 @@
 
     async function pushZoneToServer(zone) {
       try {
-        await fetch(`${SERVER_URL}/api/zones/${zone.id}`, {
+        const r = await fetch(`${SERVER_URL}/api/zones/${zone.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(zone)
         });
+        if (!r.ok) throw new Error("put failed");
       } catch (e) {
         try {
           await fetch(`${SERVER_URL}/api/zones`, {
