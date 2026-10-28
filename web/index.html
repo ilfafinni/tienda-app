@@ -2745,12 +2745,10 @@
       const st = modalMapState[containerId];
       if (!st) return;
       const transform = 'translate(' + st.tx + 'px, ' + st.ty + 'px) scale(' + st.scale + ')';
-      // Apply to container div (CSS transform is more reliable than SVG attribute)
       container.style.transform = transform;
       container.style.transformOrigin = 'center center';
-      // Also try SVG attribute as fallback
-      const vp = svg.querySelector('g.modal-viewport') || svg.querySelector('.modal-viewport');
-      if (vp) vp.setAttribute('transform', 'translate(' + st.tx + ',' + st.ty + ') scale(' + st.scale + ')');
+      const title = (containerId === 'czZoneGrid') ? document.querySelector('#modalChangeZoneOverlay h2 span') : document.getElementById('modalProdHeading');
+      if (title) title.textContent = (containerId === 'czZoneGrid' ? 'Cambiar Mueble' : 'Registrar Prenda') + ' [tx=' + st.tx + ']';
     }
 
     function resetModalMapTransform(containerId) {
