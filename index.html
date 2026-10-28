@@ -2395,7 +2395,7 @@
 
       renderZonePicker(prefillZoneId);
       centerModalMap('zoneSelectionGrid');
-      document.getElementById("formProdDetails").style.display = quick ? "none" : "block";
+      document.getElementById("modalProdHeading").textContent = 'Registrar Prenda (tx=' + modalMapState.zoneSelectionGrid.tx + ')';
       document.getElementById("formProdCodeRow").style.display = quick ? "none" : "block";
       updateProductMeterUI();
       document.getElementById("modalProductOverlay").style.display = "flex";
@@ -2742,17 +2742,15 @@
       if (!container) return;
       const svg = container.querySelector('svg');
       if (!svg) return;
-      const vp = svg.querySelector('g.modal-viewport') || svg.querySelector('.modal-viewport');
       const st = modalMapState[containerId];
       if (!st) return;
-      const transform = 'translate(' + st.tx + ',' + st.ty + ') scale(' + st.scale + ')';
-      if (vp) {
-        vp.setAttribute('transform', transform);
-      } else {
-        // Fallback: apply to svg root via style
-        svg.style.transform = transform;
-        svg.style.transformOrigin = '0 0';
-      }
+      const transform = 'translate(' + st.tx + 'px, ' + st.ty + 'px) scale(' + st.scale + ')';
+      // Apply to container div (CSS transform is more reliable than SVG attribute)
+      container.style.transform = transform;
+      container.style.transformOrigin = 'center center';
+      // Also try SVG attribute as fallback
+      const vp = svg.querySelector('g.modal-viewport') || svg.querySelector('.modal-viewport');
+      if (vp) vp.setAttribute('transform', 'translate(' + st.tx + ',' + st.ty + ') scale(' + st.scale + ')');
     }
 
     function resetModalMapTransform(containerId) {
