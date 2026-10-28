@@ -817,6 +817,7 @@
           </div>
           <div class="return-target-body">
             <div id="routeList"></div>
+            <div class="return-map-wrap" id="routeMap" style="margin-top:8px;"></div>
             <div class="return-actions" style="margin-top:10px;">
               <button class="btn btn-block" onclick="clearRoute()">🗑️ Limpiar Ruta</button>
             </div>
@@ -2593,38 +2594,138 @@
     }
 
     function renderRoute() {
-      const card = document.getElementById("cardRoute");
-      const list = document.getElementById("routeList");
-      const count = document.getElementById("routeCount");
+      const card = document.getElementById('cardRoute');
+      const list = document.getElementById('routeList');
+      const count = document.getElementById('routeCount');
+      const mapContainer = document.getElementById('routeMap');
       if (!card || !list || !count) return;
       if (!routeItems.length) {
-        card.style.display = "none";
+        card.style.display = 'none';
+        if (mapContainer) mapContainer.innerHTML = '';
         return;
       }
-      card.style.display = "block";
-      count.textContent = `${routeItems.length} ${routeItems.length === 1 ? 'prenda' : 'prendas'}`;
-      const sorted = [...routeItems].sort((a, b) => {
-        if (a.floor !== b.floor) return a.floor - b.floor;
-        if (a.zone_name !== b.zone_name) return a.zone_name.localeCompare(b.zone_name);
-        return a.code.localeCompare(b.code);
-      });
-      let html = "";
+      card.style.display = 'block';
+      count.textContent = routeItems.length + ' ' + (routeItems.length === 1 ? 'prenda' : 'prendas');
+
+      const sorted = optimizeRoute(routeItems);
+
+      let html = '';
       let currentFloor = null;
       sorted.forEach((r, idx) => {
         if (r.floor !== currentFloor) {
           currentFloor = r.floor;
-          html += `<div style="font-weight:900; font-size:12px; color:var(--primary); margin:10px 0 4px; padding-top:6px; border-top:1px solid var(--border);">Piso ${r.floor}</div>`;
+          html += '<div style="font-weight:900; font-size:12px; color:var(--primary); margin:10px 0 4px; padding-top:6px; border-top:1px solid var(--border);">Piso ' + r.floor + '</div>';
         }
-        html += `
-          <div class="sheet-prod-item" style="padding:6px 0;">
-            <div class="info">
-              <strong>${idx + 1}. ${escapeHtml(r.name)}</strong>
-              <span>${escapeHtml(r.code)} · 📍 ${escapeHtml(r.zone_name)}${r.shelf_position ? ` · ${escapeHtml(r.shelf_position)}` : ''}</span>
-            </div>
-          </div>
-        `;
+        html += '<div class="sheet-prod-item" style="padding:6px 0;"><div class="info"><strong>' + (idx+1) + '. ' + escapeHtml(r.name) + '</strong><span>' + escapeHtml(r.code) + ' - ' + escapeHtml(r.zone_name) + (r.shelf_position ? ' - ' + escapeHtml(r.shelf_position) : '') + '</span></div></div>';
       });
       list.innerHTML = html;
+
+      if (mapContainer) renderRouteMap(mapContainer, sorted);
+    }
+
+    function optimizeRoute(items) {
+      const byFloor = {};
+      items.forEach(it => {
+        const f = it.floor || 1;
+        if (!byFloor[f]) byFloor[f] = [];
+        byFloor[f].push(it);
+      });
+      const floors = Object.keys(byFloor).map(Number).sort((a, b) => a - b);
+      const result = [];
+      floors.forEach(f => {
+        const group = byFloor[f];
+        if (group.length <= 1) { result.push(...group); return; }
+        const remaining = [...group];
+        let current = remaining.reduce((best, it) => {
+          const z = zones.find(z => z.id === it.zone_id);
+          const cx = z ? z.x + z.w / 2 : 0;
+          const cy = z ? z.y + z.h / 2 : 0;
+          const bz = zones.find(z => z.id === best.zone_id);
+          const bcx = bz ? bz.x + bz.w / 2 : 0;
+          const bcy = bz ? bz.y + bz.h / 2 : 0;
+          return (cx + cy < bcx + bcy) ? it : best;
+        }, remaining[0]);
+        const ordered = [current];
+        remaining.splice(remaining.indexOf(current), 1);
+        while (remaining.length) {
+          const cz = zones.find(z => z.id === current.zone_id);
+          const ccx = cz ? cz.x + cz.w / 2 : 0;
+          const ccy = cz ? cz.y + cz.h / 2 : 0;
+          let bestIdx = 0, bestDist = Infinity;
+          remaining.forEach((it, i) => {
+            const z = zones.find(z => z.id === it.zone_id);
+            const cx = z ? z.x + z.w / 2 : 0;
+            const cy = z ? z.y + z.h / 2 : 0;
+            const d = Math.hypot(cx - ccx, cy - ccy);
+            if (d < bestDist) { bestDist = d; bestIdx = i; }
+          });
+          current = remaining[bestIdx];
+          ordered.push(current);
+          remaining.splice(bestIdx, 1);
+        }
+        result.push(...ordered);
+      });
+      return result;
+    }
+
+    function renderRouteMap(container, sortedItems) {
+      const floors = [...new Set(sortedItems.map(r => r.floor || 1))].sort((a, b) => a - b);
+      const maxFloor = Math.max(1, ...floors);
+      const viewBoxH = 800 * maxFloor;
+      const visitedZones = [];
+      const seen = new Set();
+      sortedItems.forEach(r => {
+        if (r.zone_id && !seen.has(r.zone_id)) {
+          seen.add(r.zone_id);
+          visitedZones.push(r.zone_id);
+        }
+      });
+      const zoneStopNum = {};
+      visitedZones.forEach((zid, idx) => { zoneStopNum[zid] = idx + 1; });
+
+      let svg = '<svg viewBox="0 0 1000 ' + viewBoxH + '" style="width:100%; height:auto; border:1px solid var(--border); border-radius:10px; background:#f8fafc;">';
+      for (let f = 1; f <= maxFloor; f++) {
+        const y = (f - 1) * 800;
+        if (f > 1) svg += '<line x1="0" y1="' + y + '" x2="1000" y2="' + y + '" stroke="#94a3b8" stroke-width="2" stroke-dasharray="10,6" opacity="0.7"/>';
+        svg += '<text x="12" y="' + (y + 22) + '" fill="#64748b" font-size="16" font-weight="900" opacity="0.85">PISO ' + f + '</text>';
+      }
+      const relevantFloors = new Set(floors);
+      zones.filter(z => relevantFloors.has(z.floor || 1)).forEach(z => {
+        const floor = z.floor || 1;
+        const offsetY = (floor - 1) * 800;
+        const isRoute = visitedZones.includes(z.id);
+        const fill = isRoute ? (z.color || '#3b82f6') : '#e2e8f0';
+        const opacity = isRoute ? 0.85 : 0.3;
+        const stroke = isRoute ? '#0f172a' : '#cbd5e1';
+        const sw = isRoute ? 2 : 1;
+        const tc = isRoute ? '#fff' : '#94a3b8';
+        const fs = isRoute ? 11 : 9;
+        const fw = isRoute ? 700 : 500;
+        svg += '<rect x="' + z.x + '" y="' + (z.y + offsetY) + '" width="' + z.w + '" height="' + z.h + '" rx="8" fill="' + fill + '" opacity="' + opacity + '" stroke="' + stroke + '" stroke-width="' + sw + '"/>';
+        svg += '<text x="' + (z.x + z.w/2) + '" y="' + (z.y + offsetY + z.h/2) + '" fill="' + tc + '" font-size="' + fs + '" font-weight="' + fw + '" text-anchor="middle" dominant-baseline="middle">' + escapeHtml(z.name) + '</text>';
+      });
+      const points = visitedZones.map(zid => {
+        const z = zones.find(z => z.id === zid);
+        if (!z) return null;
+        const floor = z.floor || 1;
+        const offsetY = (floor - 1) * 800;
+        return (z.x + z.w/2) + ',' + (z.y + offsetY + z.h/2);
+      }).filter(Boolean).join(' ');
+      if (visitedZones.length > 1) {
+        svg += '<polyline points="' + points + '" fill="none" stroke="#f59e0b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8,4" opacity="0.9"/>';
+      }
+      visitedZones.forEach(zid => {
+        const z = zones.find(z => z.id === zid);
+        if (!z) return;
+        const floor = z.floor || 1;
+        const offsetY = (floor - 1) * 800;
+        const cx = z.x + z.w / 2;
+        const cy = z.y + offsetY + z.h / 2;
+        svg += '<circle cx="' + cx + '" cy="' + cy + '" r="12" fill="#f59e0b" stroke="#fff" stroke-width="2"/>';
+        svg += '<text x="' + cx + '" y="' + cy + '" fill="#fff" font-size="11" font-weight="900" text-anchor="middle" dominant-baseline="middle">' + zoneStopNum[zid] + '</text>';
+      });
+      svg += '</svg>';
+      container.innerHTML = svg;
     }
 
     function clearRoute() {
