@@ -805,6 +805,7 @@
           <button class="btn btn-success btn-block" onclick="openNewProductForScanned()">
             ✨ Registrar y Asignar Mueble
           </button>
+          <button class="btn btn-secondary btn-block" style="margin-top:8px;" onclick="openLinkProductModal()">🔗 Vincular a producto existente</button>
         </div>
       </section>
 
@@ -934,6 +935,14 @@
           <label>Código de Barras / Etiqueta</label>
           <input type="text" id="formProdCode" required placeholder="Ej: PNT-001 o número de código">
         </div>
+        </div>
+        <div class="form-row" id="formProdExtraCodesRow">
+          <label>Códigos adicionales de esta etiqueta</label>
+          <div style="display:flex; gap:6px;">
+            <input type="text" id="formProdExtraCodeInput" placeholder="Escribe otro código de la etiqueta" style="flex:1; padding:8px 10px; border:2px solid var(--border); border-radius:10px; font-size:13px; font-weight:700; text-transform:uppercase; outline:none;">
+            <button type="button" class="btn btn-small btn-secondary" onclick="addExtraCode()">Agregar</button>
+          </div>
+          <div id="formProdExtraCodesList" style="margin-top:6px; font-size:11px; color:var(--text-muted); min-height:14px;"></div>
         </div>
         <div id="formProdDetails">
         <div class="form-row">
@@ -1095,6 +1104,20 @@
           <button type="submit" class="btn btn-success" style="flex:2;">Guardar Mueble</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ================= MODAL: VINCULAR CÓDIGO A PRODUCTO EXISTENTE ================= -->
+  <div class="modal-overlay" id="modalLinkProductOverlay">
+    <div class="modal-window">
+      <h2>
+        <span>Vincular a Producto Existente</span>
+        <button class="btn btn-small btn-secondary" onclick="closeLinkProductModal()">✕</button>
+      </h2>
+      <div class="form-row">
+        <input type="text" id="linkProdSearch" placeholder="Buscar por código o nombre..." oninput="renderLinkProductList(this.value)" style="text-transform:none;">
+      </div>
+      <div id="linkProdList" style="max-height:50vh; overflow-y:auto;"></div>
     </div>
   </div>
 
@@ -1392,7 +1415,10 @@
       cardNotFound.style.display = "none";
       cardUnassigned.style.display = "none";
 
-      const found = products.find(p => p.code.toUpperCase() === norm);
+      const found = products.find(p => {
+        const codes = (p.codes && p.codes.length) ? p.codes : [p.code];
+        return codes.some(c => (c || "").toUpperCase() === norm);
+      });
 
       if (found) {
         currentlyScannedItem = found;
@@ -1945,6 +1971,7 @@
     // ================= CRUD PRODUCTOS & REASIGNAR =================
     let selectedModalZoneId = null;
     let productZoneFloor = null;
+    let pendingExtraCodes = [];
 
     function openNewProductModal(prefillCode = "", prefillZoneId = null, quick = false) {
       document.getElementById("formProdId").value = "";
@@ -1959,6 +1986,9 @@
 
       document.getElementById("formProdMeter").value = "";
       document.getElementById("formProdSide").value = "frente";
+
+      pendingExtraCodes = [];
+      renderExtraCodesList();
 
       productZoneFloor = prefillZoneId ? (zones.find(z => z.id === prefillZoneId)?.floor || 1) : 1;
       document.querySelectorAll("#prodFloorBar .floor-pill").forEach(p => p.classList.remove("active"));
@@ -1983,6 +2013,9 @@
       document.getElementById("formProdShelf").value = item.shelf_position || "";
       document.getElementById("formProdMeter").value = item.meter_position || "";
       document.getElementById("formProdSide").value = item.side || "frente";
+
+      pendingExtraCodes = (item.codes && item.codes.length > 1) ? item.codes.slice(1).map(c => (c || "").toUpperCase()) : [];
+      renderExtraCodesList();
       document.getElementById("modalProdHeading").textContent = "Editar Ubicación / Prenda";
 
       productZoneFloor = item.zone_id ? (zones.find(z => z.id === item.zone_id)?.floor || 1) : 1;
@@ -2206,6 +2239,67 @@
       renderZonePicker(selectedModalZoneId);
     }
 
+    function addExtraCode() {
+      const v = (document.getElementById("formProdExtraCodeInput").value || "").trim().toUpperCase();
+      if (!v) return;
+      if (!pendingExtraCodes.includes(v)) pendingExtraCodes.push(v);
+      document.getElementById("formProdExtraCodeInput").value = "";
+      renderExtraCodesList();
+    }
+    function removeExtraCode(i) {
+      pendingExtraCodes.splice(i, 1);
+      renderExtraCodesList();
+    }
+    function renderExtraCodesList() {
+      const list = document.getElementById("formProdExtraCodesList");
+      if (!list) return;
+      if (!pendingExtraCodes.length) { list.innerHTML = ""; return; }
+      list.innerHTML = pendingExtraCodes.map((c, i) =>
+        `<span style="display:inline-block; background:#e2e8f0; padding:2px 8px; border-radius:999px; margin:2px; font-weight:700;">${escapeHtml(c)} <button type="button" onclick="removeExtraCode(${i})" style="border:none; background:transparent; color:#94a3b8; cursor:pointer; font-weight:900;">✕</button></span>`
+      ).join("");
+    }
+
+    let linkPendingCode = null;
+    function openLinkProductModal() {
+      linkPendingCode = currentlyScannedItem ? currentlyScannedItem.code : null;
+      const inp = document.getElementById("linkProdSearch");
+      if (inp) inp.value = "";
+      renderLinkProductList("");
+      document.getElementById("modalLinkProductOverlay").style.display = "flex";
+    }
+    function closeLinkProductModal() {
+      document.getElementById("modalLinkProductOverlay").style.display = "none";
+      linkPendingCode = null;
+    }
+    function renderLinkProductList(q) {
+      const term = (q || "").trim().toLowerCase();
+      const list = document.getElementById("linkProdList");
+      if (!list) return;
+      const filtered = term ? products.filter(p => (p.code || "").toLowerCase().includes(term) || (p.name || "").toLowerCase().includes(term)) : products;
+      if (!filtered.length) { list.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted);">Sin resultados.</div>'; return; }
+      list.innerHTML = filtered.map(p => `
+        <div class="product-row" onclick="linkCodeToProduct(${p.id})" style="cursor:pointer;">
+          <div>
+            <div class="code">${escapeHtml(p.code)}</div>
+            <div class="title">${escapeHtml(p.name)}</div>
+            <div class="sub">${p.category || ''} · Talla: ${p.size || '-'} · Color: ${p.color || '-'}</div>
+          </div>
+          <div style="font-weight:800; font-size:12px; color:var(--primary);">Vincular</div>
+        </div>
+      `).join("");
+    }
+    function linkCodeToProduct(id) {
+      const p = products.find(x => x.id === id);
+      if (!p || !linkPendingCode) return;
+      if (!p.codes || !p.codes.length) p.codes = [p.code];
+      const c = linkPendingCode.toUpperCase();
+      if (!p.codes.some(x => (x || "").toUpperCase() === c)) p.codes.push(c);
+      saveToLocalStorage();
+      pushProductToServer(p);
+      closeLinkProductModal();
+      processScannedCode(linkPendingCode);
+    }
+
     function closeProductModal() {
       document.getElementById("modalProductOverlay").style.display = "none";
     }
@@ -2233,6 +2327,7 @@
         zone_id: selectedModalZoneId || null,
         meter_position: meter,
         side: isFloorstand ? side : null,
+        codes: [code, ...pendingExtraCodes],
         shelf_position: meter
           ? `Metro ${meter}` + (isFloorstand && side ? ` · ${side === "frente" ? "Frente" : "Trasero"}` : "")
           : (document.getElementById("formProdShelf").value.trim() || null),
