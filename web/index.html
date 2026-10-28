@@ -1417,6 +1417,17 @@
       document.querySelectorAll(".floor-pill").forEach(p => p.classList.remove("active"));
       const pill = document.getElementById(`pillFloor-${floor}`);
       if (pill) pill.classList.add("active");
+      // Resetear vista al cambiar de piso para no quedar fuera de rango
+      mapScale = 1;
+      mapTx = 0;
+      mapTy = 0;
+      if (highlightedZoneId && floor !== "all") {
+        const hz = zones.find(z => z.id === highlightedZoneId);
+        if (!hz || (hz.floor || 1) != floor) {
+          highlightedZoneId = null;
+          closeZoneSheet();
+        }
+      }
       renderMap();
     }
 
@@ -1669,10 +1680,13 @@
 
     function getSvgPoint(e) {
       const svg = document.getElementById("storeSvg");
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return { x: 0, y: 0 };
       const pt = svg.createSVGPoint();
-      pt.x = (e.clientX - mapTx) / mapScale;
-      pt.y = (e.clientY - mapTy) / mapScale;
-      return pt;
+      pt.x = e.clientX;
+      pt.y = e.clientY;
+      const svgPt = pt.matrixTransform(ctm.inverse());
+      return { x: (svgPt.x - mapTx) / mapScale, y: (svgPt.y - mapTy) / mapScale };
     }
 
     function toggleMapEditing() {
