@@ -749,6 +749,10 @@
               📷 Activar Cámara
             </button>
           </div>
+          <div id="cameraExtraControls" style="display: none; gap: 8px; margin-top: 8px;">
+            <button class="btn btn-secondary btn-block" id="btnTorch" onclick="toggleTorch()">🔦 Linterna</button>
+            <button class="btn btn-secondary btn-block" id="btnZoom" onclick="toggleZoom()">🔍 Zoom 2x</button>
+          </div>
 
           <div class="scan-input-group">
             <input type="text" id="manualCodeInput" placeholder="EJ: PNT-001 O 780..." autocomplete="off" autocapitalize="characters">
@@ -1186,6 +1190,8 @@
     let html5QrScanner = null;
     let isCameraRunning = false;
     let lastScannedCode = null;
+    let torchOn = false;
+    let zoomOn = false;
 
     // ================= INICIALIZACIÓN =================
     window.addEventListener("DOMContentLoaded", () => {
@@ -1370,7 +1376,14 @@
         html5QrScanner = new Html5Qrcode("cameraContainer");
         await html5QrScanner.start(
           { facingMode: "environment" },
-          { fps: 20 },
+          {
+            fps: 20,
+            videoConstraints: {
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              advanced: [{ focusMode: "continuous" }]
+            }
+          },
           (decoded) => {
             triggerVibrate([80, 50, 80]);
             document.getElementById("manualCodeInput").value = decoded;
@@ -1385,6 +1398,24 @@
         isCameraRunning = true;
         btn.textContent = "🛑 Detener Cámara";
         btn.classList.replace("btn-success", "btn-secondary");
+        // Mostrar controles extra (linterna/zoom)
+        const extra = document.getElementById("cameraExtraControls");
+        if (extra) extra.style.display = "flex";
+        torchOn = false;
+        zoomOn = false;
+        const btnTorch = document.getElementById("btnTorch");
+        const btnZoom = document.getElementById("btnZoom");
+        if (btnTorch) { btnTorch.textContent = "🔦 Linterna"; btnTorch.style.display = ""; }
+        if (btnZoom) { btnZoom.textContent = "🔍 Zoom 2x"; btnZoom.style.display = ""; }
+        // Verificar soporte de linterna
+        try {
+          const caps = (typeof html5QrScanner.getRunningTrackCapabilities === "function") ? html5QrScanner.getRunningTrackCapabilities() : null;
+          if (!caps || !caps.torch) {
+            if (btnTorch) btnTorch.style.display = "none";
+          }
+        } catch (e) {
+          if (btnTorch) btnTorch.style.display = "none";
+        }
       } catch (e) {
         console.error(e);
         box.style.display = "none";
@@ -1403,7 +1434,48 @@
       const btn = document.getElementById("btnCamToggle");
       btn.textContent = "📷 Activar Cámara";
       btn.classList.replace("btn-secondary", "btn-success");
+      const extra = document.getElementById("cameraExtraControls");
+      if (extra) extra.style.display = "none";
+      torchOn = false;
+      zoomOn = false;
     }
+
+    async function toggleTorch() {
+      if (!html5QrScanner || !isCameraRunning) return;
+      torchOn = !torchOn;
+      try {
+        await html5QrScanner.applyVideoConstraints({ advanced: [{ torch: torchOn }] });
+      } catch (e) {
+        // Fallback: try direct track
+        try {
+          const track = html5QrScanner.getRunningTrack ? html5QrScanner.getRunningTrack() : null;
+          if (track && track.applyConstraints) {
+            await track.applyConstraints({ advanced: [{ torch: torchOn }] });
+          }
+        } catch (e2) {}
+      }
+      const btn = document.getElementById("btnTorch");
+      if (btn) btn.textContent = torchOn ? "🔦 Linterna ON" : "🔦 Linterna";
+    }
+
+    async function toggleZoom() {
+      if (!html5QrScanner || !isCameraRunning) return;
+      zoomOn = !zoomOn;
+      const z = zoomOn ? 2 : 1;
+      try {
+        await html5QrScanner.applyVideoConstraints({ zoom: z });
+      } catch (e) {
+        try {
+          const track = html5QrScanner.getRunningTrack ? html5QrScanner.getRunningTrack() : null;
+          if (track && track.applyConstraints) {
+            await track.applyConstraints({ zoom: z });
+          }
+        } catch (e2) {}
+      }
+      const btn = document.getElementById("btnZoom");
+      if (btn) btn.textContent = zoomOn ? "🔍 Zoom 1x" : "🔍 Zoom 2x";
+    }
+
 
     function renderReturnZoneMap() {
       const container = document.getElementById("returnZoneMap");
