@@ -2056,6 +2056,30 @@
       if (p) openEditProductModal(p);
     }
 
+    function meterGridSvg(z) {
+      if (z.type !== "pared" && z.type !== "floorstand") return "";
+      const unit = 50;
+      const isHoriz = z.w >= z.h;
+      const maxM = Math.max(1, Math.floor((isHoriz ? z.w : z.h) / unit));
+      let out = "";
+      if (isHoriz) {
+        for (let m = 1; m <= maxM; m++) {
+          const lx = z.x + m * unit;
+          if (lx < z.x + z.w) out += `<line x1="${lx}" y1="${z.y + 2}" x2="${lx}" y2="${z.y + z.h - 2}" stroke="rgba(255,255,255,0.35)" stroke-width="1" stroke-dasharray="3,3"/>`;
+          const labelX = z.x + (m - 0.5) * unit;
+          out += `<text x="${labelX}" y="${z.y + z.h - 5}" fill="rgba(255,255,255,0.6)" font-size="9" font-weight="700" text-anchor="middle">${m}</text>`;
+        }
+      } else {
+        for (let m = 1; m <= maxM; m++) {
+          const ly = z.y + m * unit;
+          if (ly < z.y + z.h) out += `<line x1="${z.x + 2}" y1="${ly}" x2="${z.x + z.w - 2}" y2="${ly}" stroke="rgba(255,255,255,0.35)" stroke-width="1" stroke-dasharray="3,3"/>`;
+          const labelY = z.y + (m - 0.5) * unit;
+          out += `<text x="${z.x + 6}" y="${labelY}" fill="rgba(255,255,255,0.6)" font-size="9" font-weight="700" text-anchor="middle" dominant-baseline="middle">${m}</text>`;
+        }
+      }
+      return out;
+    }
+
     function renderZonePicker(currentId) {
       selectedModalZoneId = currentId;
       const container = document.getElementById("zoneSelectionGrid");
@@ -2089,6 +2113,7 @@
           ${floorZones.map(z => `
             <g onclick="handleZoneMapClick(event, ${z.id}, 'product')" style="cursor:pointer;">
               <rect x="${z.x}" y="${z.y}" width="${z.w}" height="${z.h}" rx="8" fill="${z.id === currentId ? (z.color || '#3b82f6') : '#cbd5e1'}" opacity="${z.id === currentId ? 0.9 : 0.6}" stroke="#0f172a" stroke-width="1.5" />
+              ${meterGridSvg(z)}
               <text x="${z.x + z.w / 2}" y="${z.y + z.h / 2}" fill="#fff" font-size="11" font-weight="700" text-anchor="middle" dominant-baseline="middle">${escapeHtml(z.name)}</text>
               ${z.type === "floorstand" ? (z.w >= z.h
                 ? `<line x1="${z.x + z.w/2}" y1="${z.y + 4}" x2="${z.x + z.w/2}" y2="${z.y + z.h - 4}" stroke="rgba(255,255,255,0.5)" stroke-width="1.5" stroke-dasharray="4,3"/>`
@@ -2102,7 +2127,6 @@
             <text x="${marker.x}" y="${marker.y - 13}" fill="#f59e0b" font-size="10" font-weight="900" text-anchor="middle" dominant-baseline="middle">${marker.label}</text>
           ` : ''}
         </svg>
-        <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-align:center;">Toca un mueble y luego el punto exacto (metro) dentro de él.</div>
       `;
     }
 
@@ -2184,6 +2208,7 @@
           ${floorZones.map(z => `
             <g onclick="handleZoneMapClick(event, ${z.id}, 'quick')" style="cursor:pointer;">
               <rect x="${z.x}" y="${z.y}" width="${z.w}" height="${z.h}" rx="8" fill="${z.id === currentId ? (z.color || '#3b82f6') : '#cbd5e1'}" opacity="${z.id === currentId ? 0.9 : 0.6}" stroke="#0f172a" stroke-width="1.5" />
+              ${meterGridSvg(z)}
               <text x="${z.x + z.w / 2}" y="${z.y + z.h / 2}" fill="#fff" font-size="11" font-weight="700" text-anchor="middle" dominant-baseline="middle">${escapeHtml(z.name)}</text>
               ${z.type === "floorstand" ? (z.w >= z.h
                 ? `<line x1="${z.x + z.w/2}" y1="${z.y + 4}" x2="${z.x + z.w/2}" y2="${z.y + z.h - 4}" stroke="rgba(255,255,255,0.5)" stroke-width="1.5" stroke-dasharray="4,3"/>`
@@ -2197,7 +2222,6 @@
             <text x="${marker.x}" y="${marker.y - 13}" fill="#f59e0b" font-size="10" font-weight="900" text-anchor="middle" dominant-baseline="middle">${marker.label}</text>
           ` : ''}
         </svg>
-        <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-align:center;">Toca un mueble y luego el punto exacto (metro) dentro de él.</div>
       `;
     }
 
