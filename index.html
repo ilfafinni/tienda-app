@@ -1021,7 +1021,7 @@
           <button class="floor-pill" id="prodFloor-1" onclick="setProductZoneFloor(1)">Piso 1</button>
           <button class="floor-pill" id="prodFloor-2" onclick="setProductZoneFloor(2)">Piso 2</button>
           <button class="floor-pill" id="prodFloor-3" onclick="setProductZoneFloor(3)">Piso 3</button>
-          <button class="floor-pill" onclick="resetModalMapTransform('zoneSelectionGrid')" style="min-width:40px;">🎯</button>
+          <button class="floor-pill" onclick="centerModalMap('zoneSelectionGrid')" style="min-width:40px;">🎯</button>
         </div>
         <div class="form-row" style="flex:0 0 auto; min-height:50vh; display:flex; flex-direction:column; margin-bottom:0;">
           <label style="flex:0 0 auto;">🗺️ ¿En qué Mueble / Zona de la Tienda va?</label>
@@ -1064,7 +1064,7 @@
         <button class="floor-pill" id="czFloor-1" onclick="setChangeZoneFloor(1)">Piso 1</button>
         <button class="floor-pill" id="czFloor-2" onclick="setChangeZoneFloor(2)">Piso 2</button>
         <button class="floor-pill" id="czFloor-3" onclick="setChangeZoneFloor(3)">Piso 3</button>
-        <button class="floor-pill" onclick="resetModalMapTransform('czZoneGrid')" style="min-width:40px;">🎯</button>
+        <button class="floor-pill" onclick="centerModalMap('czZoneGrid')" style="min-width:40px;">🎯</button>
       </div>
       <div class="zone-selection-grid" id="czZoneGrid" style="height:60vh; min-height:300px; overflow:hidden;"></div>
       <div id="czMeterRow" style="flex:0 0 auto; display:none; margin-top:6px;">
@@ -2394,7 +2394,7 @@
       if (ppill) ppill.classList.add("active");
 
       renderZonePicker(prefillZoneId);
-      resetModalMapTransform('zoneSelectionGrid');
+      centerModalMap('zoneSelectionGrid');
       document.getElementById("formProdDetails").style.display = quick ? "none" : "block";
       document.getElementById("formProdCodeRow").style.display = quick ? "none" : "block";
       updateProductMeterUI();
@@ -2423,7 +2423,7 @@
       if (ppill) ppill.classList.add("active");
 
       renderZonePicker(item.zone_id || null);
-      resetModalMapTransform('zoneSelectionGrid');
+      centerModalMap('zoneSelectionGrid');
       document.getElementById("formProdDetails").style.display = "block";
       document.getElementById("formProdCodeRow").style.display = "block";
       updateProductMeterUI();
@@ -2667,7 +2667,7 @@
       const pill = document.getElementById(`prodFloor-${floor}`);
       if (pill) pill.classList.add("active");
       renderZonePicker(selectedModalZoneId);
-      resetModalMapTransform('zoneSelectionGrid');
+      centerModalMap('zoneSelectionGrid');
     }
 
     function addExtraCode() {
@@ -2752,6 +2752,26 @@
     function resetModalMapTransform(containerId) {
       const st = modalMapState[containerId];
       if (st) { st.scale = 1; st.tx = 0; st.ty = 0; }
+      applyModalMapTransform(containerId);
+    }
+
+    function centerModalMap(containerId) {
+      const st = modalMapState[containerId];
+      if (!st) return;
+      let floor = null;
+      if (containerId === 'zoneSelectionGrid') floor = productZoneFloor;
+      else if (containerId === 'czZoneGrid') floor = changeZoneFloor;
+      const shown = floor ? zones.filter(z => (z.floor || 1) === floor) : zones;
+      if (!shown.length) { st.scale = 1; st.tx = 0; st.ty = 0; applyModalMapTransform(containerId); return; }
+      const xs = shown.map(z => z.x), xe = shown.map(z => z.x + z.w);
+      const ys = shown.map(z => z.y), ye = shown.map(z => z.y + z.h);
+      const minX = Math.min(...xs), maxX = Math.max(...xe);
+      const minY = Math.min(...ys), maxY = Math.max(...ye);
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      st.scale = 1;
+      st.tx = 500 - cx;
+      st.ty = 400 - cy;
       applyModalMapTransform(containerId);
     }
 
@@ -2870,7 +2890,7 @@
 
       changeZoneFloor = p.zone_id ? (zones.find(z => z.id === p.zone_id)?.floor || 1) : 1;
       setChangeZoneFloor(changeZoneFloor);
-      resetModalMapTransform('czZoneGrid');
+      centerModalMap('czZoneGrid');
       document.getElementById("modalChangeZoneOverlay").style.display = "flex";
     }
 
@@ -2904,7 +2924,7 @@
         }
       }
       renderQuickZonePicker(quickChangeZoneId);
-      resetModalMapTransform('czZoneGrid');
+      centerModalMap('czZoneGrid');
     }
 
     function closeChangeZoneModal() {
