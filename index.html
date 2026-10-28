@@ -2743,10 +2743,16 @@
       const svg = container.querySelector('svg');
       if (!svg) return;
       const vp = svg.querySelector('g.modal-viewport') || svg.querySelector('.modal-viewport');
-      if (!vp) { console.warn('no modal-viewport g found'); return; }
       const st = modalMapState[containerId];
       if (!st) return;
-      vp.setAttribute('transform', 'translate(' + st.tx + ',' + st.ty + ') scale(' + st.scale + ')');
+      const transform = 'translate(' + st.tx + ',' + st.ty + ') scale(' + st.scale + ')';
+      if (vp) {
+        vp.setAttribute('transform', transform);
+      } else {
+        // Fallback: apply to svg root via style
+        svg.style.transform = transform;
+        svg.style.transformOrigin = '0 0';
+      }
     }
 
     function resetModalMapTransform(containerId) {
