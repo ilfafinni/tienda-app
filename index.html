@@ -854,7 +854,10 @@
             </button>
             <button class="edit-tool-btn btn-success-tool" onclick="openAddZoneModal()">
               ➕ Crear
-            </button>
+             </button>
+             <button class="edit-tool-btn" onclick="deleteSelectedZone()" style="background: var(--danger); border-color: var(--danger);">
+               Eliminar
+             </button>
           </div>
           <div class="map-hint-banner" id="mapHintBanner">
             Toca un mueble para ver sus prendas o usa el zoom para explorar.
@@ -1185,6 +1188,13 @@
     let dragStartPos = { x: 0, y: 0 };
     let initialZoneCoords = { x: 0, y: 0 };
     let draggingZoneId = null;
+    let isResizing = false;
+    let resizingHandle = null;
+    let resizingZone = null;
+    let resizeStartCoords = null;
+    let resizeStartPos = { x: 0, y: 0 };
+    let movedDuringInteraction = false;
+    let tappedZoneForSelect = null;
 
     // Drawing state
     let isDrawingRect = false;
@@ -1572,6 +1582,11 @@
           if (track && track.applyConstraints) {
             await track.applyConstraints({ zoom: z });
           }
+        } catch (e2) {}
+      }
+      const btn = document.getElementById("btnZoom");
+      if (btn) btn.textContent = zoomOn ? "🔍 Zoom 1x" : "🔍 Zoom 2x";
+    }
 
     async function switchCamera() {
       if (!html5QrScanner || !isCameraRunning) return;
@@ -1598,12 +1613,6 @@
       } catch (e) {
         console.warn("switch camera failed", e);
       }
-    }
-
-        } catch (e2) {}
-      }
-      const btn = document.getElementById("btnZoom");
-      if (btn) btn.textContent = zoomOn ? "🔍 Zoom 1x" : "🔍 Zoom 2x";
     }
 
 
@@ -1789,12 +1798,18 @@
               id="rect-z-${z.id}"
               x="${z.x}" y="${z.y}" width="${z.w}" height="${z.h}"
               fill="${fillCol}" opacity="${isDragging ? 0.55 : 1}"></rect>
-            <text class="zone-title" x="${cx}" y="${cy - 7}">${escapeHtml(z.name)}</text>
-            <text class="zone-count" x="${cx}" y="${cy + 12}">${count} ${count === 1 ? 'prenda' : 'prendas'}</text>
-            <text class="zone-meters" x="${cx}" y="${cy + 26}" font-size="9" fill="rgba(255,255,255,0.8)" text-anchor="middle">${(z.w/50).toFixed(1)}m x ${(z.h/50).toFixed(1)}m</text>
+            <text class="zone-title" id="title-z-${z.id}" x="${cx}" y="${cy - 7}">${escapeHtml(z.name)}</text>
+            <text class="zone-count" id="count-z-${z.id}" x="${cx}" y="${cy + 12}">${count} ${count === 1 ? 'prenda' : 'prendas'}</text>
+            <text class="zone-meters" id="meters-z-${z.id}" x="${cx}" y="${cy + 26}" font-size="9" fill="rgba(255,255,255,0.8)" text-anchor="middle">${(z.w/50).toFixed(1)}m x ${(z.h/50).toFixed(1)}m</text>
             ${z.type === "floorstand" ? (z.w >= z.h
               ? `<line x1="${cx}" y1="${z.y + 4}" x2="${cx}" y2="${z.y + z.h - 4}" stroke="rgba(255,255,255,0.55)" stroke-width="1.5" stroke-dasharray="4,3"/>`
               : `<line x1="${z.x + 4}" y1="${cy}" x2="${z.x + z.w - 4}" y2="${cy}" stroke="rgba(255,255,255,0.55)" stroke-width="1.5" stroke-dasharray="4,3"/>`) : ''}
+            ${isEditingMap && selectedZoneForEdit && selectedZoneForEdit.id === z.id ? `
+              <circle class="resize-handle" data-handle="nw" data-zone="${z.id}" cx="${z.x}" cy="${z.y}" r="7" fill="#f59e0b" stroke="#fff" stroke-width="2" style="cursor:nwse-resize;"/>
+              <circle class="resize-handle" data-handle="ne" data-zone="${z.id}" cx="${z.x + z.w}" cy="${z.y}" r="7" fill="#f59e0b" stroke="#fff" stroke-width="2" style="cursor:nesw-resize;"/>
+              <circle class="resize-handle" data-handle="sw" data-zone="${z.id}" cx="${z.x}" cy="${z.y + z.h}" r="7" fill="#f59e0b" stroke="#fff" stroke-width="2" style="cursor:nesw-resize;"/>
+              <circle class="resize-handle" data-handle="se" data-zone="${z.id}" cx="${z.x + z.w}" cy="${z.y + z.h}" r="7" fill="#f59e0b" stroke="#fff" stroke-width="2" style="cursor:nwse-resize;"/>
+            ` : ''}
             ${currentFloorFilter === "all" && z._floor > 1 ? `
               <rect x="${z.x + 6}" y="${z.y + 6}" width="28" height="18" rx="4" fill="#0f172a" opacity="0.8"></rect>
               <text x="${z.x + 20}" y="${z.y + 19}" fill="#ffffff" font-size="9" font-weight="bold" text-anchor="middle">P${z._floor}</text>
@@ -1884,6 +1899,7 @@
 
       svg.addEventListener("pointerdown", (e) => {
         const svgPt = getSvgPoint(e);
+        movedDuringInteraction = false;
 
         if (isEditingMap && editSubMode === "draw") {
           // Modo Dibujo de rectángulos
@@ -1895,11 +1911,26 @@
           return;
         }
 
+        // Resize handle (solo en modo edición)
+        const handleEl = e.target.closest(".resize-handle");
+        if (handleEl && isEditingMap) {
+          isResizing = true;
+          resizingHandle = handleEl.dataset.handle;
+          resizingZone = zones.find(z => z.id === parseInt(handleEl.dataset.zone));
+          if (resizingZone) {
+            resizeStartCoords = { x: resizingZone.x, y: resizingZone.y, w: resizingZone.w, h: resizingZone.h };
+            resizeStartPos = svgPt;
+            svg.setPointerCapture(e.pointerId);
+          }
+          return;
+        }
+
         const zoneNode = e.target.closest(".zone-node");
 
         if (zoneNode) {
           const zoneId = parseInt(zoneNode.dataset.id);
           const z = zones.find(item => item.id === zoneId);
+          tappedZoneForSelect = z;
 
           if (isEditingMap && editSubMode === "move") {
             // Arrastrar zona en modo edición
@@ -1934,13 +1965,63 @@
           return;
         }
 
+        if (isResizing && resizingZone) {
+          movedDuringInteraction = true;
+          const dx = cur.x - resizeStartPos.x;
+          const dy = cur.y - resizeStartPos.y;
+          const z = resizingZone;
+          const sc = resizeStartCoords;
+          switch (resizingHandle) {
+            case 'nw':
+              z.x = Math.max(0, Math.min(sc.x + sc.w - 30, Math.round((sc.x + dx) / 10) * 10));
+              z.y = Math.max(0, Math.min(sc.y + sc.h - 30, Math.round((sc.y + dy) / 10) * 10));
+              z.w = Math.max(30, sc.w - (z.x - sc.x));
+              z.h = Math.max(30, sc.h - (z.y - sc.y));
+              break;
+            case 'ne':
+              z.y = Math.max(0, Math.min(sc.y + sc.h - 30, Math.round((sc.y + dy) / 10) * 10));
+              z.w = Math.max(30, Math.round((sc.w + dx) / 10) * 10);
+              z.h = Math.max(30, sc.h - (z.y - sc.y));
+              break;
+            case 'sw':
+              z.x = Math.max(0, Math.min(sc.x + sc.w - 30, Math.round((sc.x + dx) / 10) * 10));
+              z.w = Math.max(30, sc.w - (z.x - sc.x));
+              z.h = Math.max(30, Math.round((sc.h + dy) / 10) * 10);
+              break;
+            case 'se':
+              z.w = Math.max(30, Math.round((sc.w + dx) / 10) * 10);
+              z.h = Math.max(30, Math.round((sc.h + dy) / 10) * 10);
+              break;
+          }
+          // Update DOM directly (no full re-render)
+          const rect = document.getElementById(`rect-z-${z.id}`);
+          if (rect) { rect.setAttribute('x', z.x); rect.setAttribute('y', z.y); rect.setAttribute('width', z.w); rect.setAttribute('height', z.h); }
+          const title = document.getElementById(`title-z-${z.id}`);
+          if (title) { title.setAttribute('x', z.x + z.w/2); title.setAttribute('y', z.y + z.h/2 - 7); }
+          const count = document.getElementById(`count-z-${z.id}`);
+          if (count) { count.setAttribute('x', z.x + z.w/2); count.setAttribute('y', z.y + z.h/2 + 12); }
+          const meters = document.getElementById(`meters-z-${z.id}`);
+          if (meters) { meters.setAttribute('x', z.x + z.w/2); meters.setAttribute('y', z.y + z.h/2 + 26); meters.textContent = `${(z.w/50).toFixed(1)}m x ${(z.h/50).toFixed(1)}m`; }
+          updateResizeHandles(z);
+          return;
+        }
+
         if (isDraggingZone && draggedZoneObj) {
           const dx = cur.x - dragStartPos.x;
           const dy = cur.y - dragStartPos.y;
-          // Snap a cuadrícula de 10px para mantener orden
+          if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) movedDuringInteraction = true;
           draggedZoneObj.x = Math.max(0, Math.min(1000 - draggedZoneObj.w, Math.round((initialZoneCoords.x + dx) / 10) * 10));
           draggedZoneObj.y = Math.max(0, Math.min(800 - draggedZoneObj.h, Math.round((initialZoneCoords.y + dy) / 10) * 10));
-          renderMap();
+          // Update DOM directly (no full re-render, avoids flicker)
+          const rect = document.getElementById(`rect-z-${draggedZoneObj.id}`);
+          if (rect) { rect.setAttribute('x', draggedZoneObj.x); rect.setAttribute('y', draggedZoneObj.y); }
+          const title = document.getElementById(`title-z-${draggedZoneObj.id}`);
+          if (title) { title.setAttribute('x', draggedZoneObj.x + draggedZoneObj.w/2); title.setAttribute('y', draggedZoneObj.y + draggedZoneObj.h/2 - 7); }
+          const count = document.getElementById(`count-z-${draggedZoneObj.id}`);
+          if (count) { count.setAttribute('x', draggedZoneObj.x + draggedZoneObj.w/2); count.setAttribute('y', draggedZoneObj.y + draggedZoneObj.h/2 + 12); }
+          const meters = document.getElementById(`meters-z-${draggedZoneObj.id}`);
+          if (meters) { meters.setAttribute('x', draggedZoneObj.x + draggedZoneObj.w/2); meters.setAttribute('y', draggedZoneObj.y + draggedZoneObj.h/2 + 26); }
+          updateResizeHandles(draggedZoneObj);
           return;
         }
 
@@ -1966,16 +2047,42 @@
           }
         }
 
-        if (isDraggingZone && draggedZoneObj) {
+        if (isResizing && resizingZone) {
           saveToLocalStorage();
-          pushZoneToServer(draggedZoneObj);
+          pushZoneToServer(resizingZone);
+          isResizing = false;
+          resizingHandle = null;
+          resizingZone = null;
+          resizeStartCoords = null;
+          renderMap();
+        } else if (isDraggingZone && draggedZoneObj) {
+          if (movedDuringInteraction) {
+            saveToLocalStorage();
+            pushZoneToServer(draggedZoneObj);
+          } else {
+            // Tap sin movimiento: seleccionar la zona (mostrar handles + sheet)
+            tappedZoneForSelect = draggedZoneObj;
+            selectedZoneForEdit = draggedZoneObj;
+            highlightedZoneId = draggedZoneObj.id;
+            showZoneDetailSheet(draggedZoneObj);
+          }
+          isDraggingZone = false;
+          draggedZoneObj = null;
+          draggingZoneId = null;
+          renderMap();
         }
 
-        isDraggingZone = false;
-        draggedZoneObj = null;
-        draggingZoneId = null;
+        // Tap en zona (sin drag) en modo edición: seleccionar para handles/delete
+        if (isEditingMap && editSubMode === "move" && tappedZoneForSelect && !movedDuringInteraction) {
+          selectedZoneForEdit = tappedZoneForSelect;
+          highlightedZoneId = tappedZoneForSelect.id;
+          showZoneDetailSheet(tappedZoneForSelect);
+          renderMap();
+        }
+
+        movedDuringInteraction = false;
+        tappedZoneForSelect = null;
         isPanning = false;
-        renderMap();
       };
 
       svg.addEventListener("pointerup", stopInteraction);
@@ -2033,6 +2140,20 @@
       pt.y = e.clientY;
       const svgPt = pt.matrixTransform(ctm.inverse());
       return { x: (svgPt.x - mapTx) / mapScale, y: (svgPt.y - mapTy) / mapScale };
+    }
+
+    function updateResizeHandles(z) {
+      if (!z) return;
+      const handles = [
+        { cls: "nw", cx: z.x, cy: z.y },
+        { cls: "ne", cx: z.x + z.w, cy: z.y },
+        { cls: "sw", cx: z.x, cy: z.y + z.h },
+        { cls: "se", cx: z.x + z.w, cy: z.y + z.h },
+      ];
+      handles.forEach(h => {
+        const el = document.querySelector(`.resize-handle[data-handle="${h.cls}"][data-zone="${z.id}"]`);
+        if (el) { el.setAttribute('cx', h.cx); el.setAttribute('cy', h.cy); }
+      });
     }
 
     function toggleMapEditing() {
@@ -2097,10 +2218,21 @@
       document.getElementById("zoneDetailSheet").style.display = "none";
     }
 
-    function editSelectedZone() {
-      if (selectedZoneForEdit) {
-        openEditZoneModal(selectedZoneForEdit);
+    function deleteSelectedZone() {
+      if (!selectedZoneForEdit) {
+        alert("Primero toca un mueble para seleccionarlo.");
+        return;
       }
+      if (!confirm(`¿Eliminar "${selectedZoneForEdit.name}" del mapa?`)) return;
+      const id = selectedZoneForEdit.id;
+      zones = zones.filter(z => z.id !== id);
+      products.forEach(p => { if (p.zone_id === id) p.zone_id = null; });
+      selectedZoneForEdit = null;
+      highlightedZoneId = null;
+      saveToLocalStorage();
+      renderMap();
+      closeZoneSheet();
+      try { fetch(`${SERVER_URL}/api/zones/${id}`, { method: "DELETE" }); } catch (e) {}
     }
 
     function addProdToCurrentZone() {
