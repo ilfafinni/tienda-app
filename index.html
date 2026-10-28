@@ -816,8 +816,8 @@
             <div class="subdetail">Orden sugerido por piso y mueble</div>
           </div>
           <div class="return-target-body">
-            <div id="routeList"></div>
-            <div class="return-map-wrap" id="routeMap" style="margin-top:8px;"></div>
+            <div class="return-map-wrap" id="routeMap" style="margin-top:0;"></div>
+            <div id="routeList" style="margin-top:8px;"></div>
             <div class="return-actions" style="margin-top:10px;">
               <button class="btn btn-block" onclick="clearRoute()">🗑️ Limpiar Ruta</button>
             </div>
@@ -2649,7 +2649,7 @@
           currentFloor = r.floor;
           html += '<div style="font-weight:900; font-size:12px; color:var(--primary); margin:10px 0 4px; padding-top:6px; border-top:1px solid var(--border);">Piso ' + r.floor + '</div>';
         }
-        html += '<div class="sheet-prod-item" style="padding:6px 0;"><div class="info"><strong>' + (idx+1) + '. ' + escapeHtml(r.name) + '</strong><span>' + escapeHtml(r.code) + ' - ' + escapeHtml(r.zone_name) + (r.shelf_position ? ' - ' + escapeHtml(r.shelf_position) : '') + '</span></div></div>';
+        html += '<div class="sheet-prod-item" style="padding:6px 0;"><div class="info"><strong>' + (idx+1) + '. ' + escapeHtml(r.name) + '</strong><span>' + escapeHtml(r.code) + ' - ' + escapeHtml(r.zone_name) + (r.shelf_position ? ' - ' + escapeHtml(r.shelf_position) : '') + '</span></div><button class="btn-reassign" onclick="removeFromRoute(\'' + r.code + '\')" style="margin-left:8px;">✕</button></div>';
       });
       list.innerHTML = html;
 
@@ -2759,6 +2759,13 @@
       });
       svg += '</svg>';
       container.innerHTML = svg;
+    }
+
+    function removeFromRoute(code) {
+      const c = (code || "").toUpperCase();
+      routeItems = routeItems.filter(r => (r.code || "").toUpperCase() !== c);
+      saveRoute();
+      renderRoute();
     }
 
     function clearRoute() {
