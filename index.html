@@ -1957,16 +1957,89 @@
       selectedModalZoneId = currentId;
       const container = document.getElementById("zoneSelectionGrid");
       if (!container) return;
+      const zone = zones.find(z => z.id === currentId);
+      const meter = parseInt(document.getElementById("formProdMeter").value) || null;
+      const side = document.getElementById("formProdSide").value || "frente";
+      // Coordenadas del marcador de metro (si aplica)
+      let marker = null;
+      if (zone && meter) {
+        const unit = 50;
+        const isHoriz = zone.w >= zone.h;
+        const maxM = Math.max(1, Math.floor((isHoriz ? zone.w : zone.h) / unit));
+        const m = Math.min(Math.max(1, meter), maxM);
+        const pos = (m - 0.5) * unit;
+        if (isHoriz) {
+          const x = zone.x + Math.min(pos, zone.w - unit / 2);
+          let y = zone.y + zone.h / 2;
+          if (zone.type === "floorstand") y = (side === "trasero") ? zone.y + (3 * zone.h / 4) : zone.y + (zone.h / 4);
+          marker = { x, y, label: `M${m}` };
+        } else {
+          const y = zone.y + Math.min(pos, zone.h - unit / 2);
+          let x = zone.x + zone.w / 2;
+          if (zone.type === "floorstand") x = (side === "trasero") ? zone.x + (3 * zone.w / 4) : zone.x + (zone.w / 4);
+          marker = { x, y, label: `M${m}` };
+        }
+      }
       container.innerHTML = `
         <svg viewBox="0 0 1000 800" style="width:100%; height:auto; border:1px solid var(--border); border-radius:10px; background:#f8fafc;">
           ${zones.map(z => `
-            <g onclick="pickZoneChoice(${z.id})" style="cursor:pointer;">
+            <g onclick="handleZoneMapClick(event, ${z.id}, 'product')" style="cursor:pointer;">
               <rect x="${z.x}" y="${z.y}" width="${z.w}" height="${z.h}" rx="8" fill="${z.id === currentId ? (z.color || '#3b82f6') : '#cbd5e1'}" opacity="${z.id === currentId ? 0.9 : 0.6}" stroke="#0f172a" stroke-width="1.5" />
               <text x="${z.x + z.w / 2}" y="${z.y + z.h / 2}" fill="#fff" font-size="11" font-weight="700" text-anchor="middle" dominant-baseline="middle">${escapeHtml(z.name)}</text>
+              ${z.type === "floorstand" ? (z.w >= z.h
+                ? `<line x1="${z.x + z.w/2}" y1="${z.y + 4}" x2="${z.x + z.w/2}" y2="${z.y + z.h - 4}" stroke="rgba(255,255,255,0.5)" stroke-width="1.5" stroke-dasharray="4,3"/>`
+                : `<line x1="${z.x + 4}" y1="${z.y + z.h/2}" x2="${z.x + z.w - 4}" y2="${z.y + z.h/2}" stroke="rgba(255,255,255,0.5)" stroke-width="1.5" stroke-dasharray="4,3"/>`) : ''}
             </g>
           `).join("")}
+          ${marker ? `
+            <circle cx="${marker.x}" cy="${marker.y}" r="9" fill="#f59e0b" stroke="#fff" stroke-width="2">
+              <animate attributeName="r" values="7;11;7" dur="1s" repeatCount="indefinite"/>
+            </circle>
+            <text x="${marker.x}" y="${marker.y - 13}" fill="#f59e0b" font-size="10" font-weight="900" text-anchor="middle" dominant-baseline="middle">${marker.label}</text>
+          ` : ''}
         </svg>
+        <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-align:center;">Toca un mueble y luego el punto exacto (metro) dentro de él.</div>
       `;
+    }
+
+    function handleZoneMapClick(evt, zoneId, mode) {
+      evt.stopPropagation();
+      const zone = zones.find(z => z.id === zoneId);
+      if (!zone) return;
+      const containerId = mode === "quick" ? "czZoneGrid" : "zoneSelectionGrid";
+      const svg = document.querySelector(`#${containerId} svg`);
+      if (!svg) return;
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return;
+      const pt = svg.createSVGPoint();
+      pt.x = evt.clientX; pt.y = evt.clientY;
+      const svgPt = pt.matrixTransform(ctm.inverse());
+      const unit = 50;
+      const isHoriz = zone.w >= zone.h;
+      const maxM = Math.max(1, Math.floor((isHoriz ? zone.w : zone.h) / unit));
+      let meter, side;
+      if (isHoriz) {
+        const rel = svgPt.x - zone.x;
+        meter = Math.min(maxM, Math.max(1, Math.floor(rel / unit) + 1));
+        if (zone.type === "floorstand") side = (svgPt.y < zone.y + zone.h / 2) ? "frente" : "trasero";
+      } else {
+        const rel = svgPt.y - zone.y;
+        meter = Math.min(maxM, Math.max(1, Math.floor(rel / unit) + 1));
+        if (zone.type === "floorstand") side = (svgPt.x < zone.x + zone.w / 2) ? "frente" : "trasero";
+      }
+      if (mode === "quick") {
+        quickChangeZoneId = zoneId;
+        document.getElementById("czMeter").value = meter;
+        if (side) document.getElementById("czSide").value = side;
+        updateQuickMeterUI();
+        renderQuickZonePicker(zoneId);
+      } else {
+        selectedModalZoneId = zoneId;
+        document.getElementById("formProdMeter").value = meter;
+        if (side) document.getElementById("formProdSide").value = side;
+        updateProductMeterUI();
+        renderZonePicker(zoneId);
+      }
     }
 
     function pickZoneChoice(id) {
@@ -1979,15 +2052,47 @@
       quickChangeZoneId = currentId;
       const container = document.getElementById("czZoneGrid");
       if (!container) return;
+      const zone = zones.find(z => z.id === currentId);
+      const meter = parseInt(document.getElementById("czMeter").value) || null;
+      const side = document.getElementById("czSide").value || "frente";
+      let marker = null;
+      if (zone && meter) {
+        const unit = 50;
+        const isHoriz = zone.w >= zone.h;
+        const maxM = Math.max(1, Math.floor((isHoriz ? zone.w : zone.h) / unit));
+        const m = Math.min(Math.max(1, meter), maxM);
+        const pos = (m - 0.5) * unit;
+        if (isHoriz) {
+          const x = zone.x + Math.min(pos, zone.w - unit / 2);
+          let y = zone.y + zone.h / 2;
+          if (zone.type === "floorstand") y = (side === "trasero") ? zone.y + (3 * zone.h / 4) : zone.y + (zone.h / 4);
+          marker = { x, y, label: `M${m}` };
+        } else {
+          const y = zone.y + Math.min(pos, zone.h - unit / 2);
+          let x = zone.x + zone.w / 2;
+          if (zone.type === "floorstand") x = (side === "trasero") ? zone.x + (3 * zone.w / 4) : zone.x + (zone.w / 4);
+          marker = { x, y, label: `M${m}` };
+        }
+      }
       container.innerHTML = `
         <svg viewBox="0 0 1000 800" style="width:100%; height:auto; border:1px solid var(--border); border-radius:10px; background:#f8fafc;">
           ${zones.map(z => `
-            <g onclick="pickQuickZone(${z.id})" style="cursor:pointer;">
+            <g onclick="handleZoneMapClick(event, ${z.id}, 'quick')" style="cursor:pointer;">
               <rect x="${z.x}" y="${z.y}" width="${z.w}" height="${z.h}" rx="8" fill="${z.id === currentId ? (z.color || '#3b82f6') : '#cbd5e1'}" opacity="${z.id === currentId ? 0.9 : 0.6}" stroke="#0f172a" stroke-width="1.5" />
               <text x="${z.x + z.w / 2}" y="${z.y + z.h / 2}" fill="#fff" font-size="11" font-weight="700" text-anchor="middle" dominant-baseline="middle">${escapeHtml(z.name)}</text>
+              ${z.type === "floorstand" ? (z.w >= z.h
+                ? `<line x1="${z.x + z.w/2}" y1="${z.y + 4}" x2="${z.x + z.w/2}" y2="${z.y + z.h - 4}" stroke="rgba(255,255,255,0.5)" stroke-width="1.5" stroke-dasharray="4,3"/>`
+                : `<line x1="${z.x + 4}" y1="${z.y + z.h/2}" x2="${z.x + z.w - 4}" y2="${z.y + z.h/2}" stroke="rgba(255,255,255,0.5)" stroke-width="1.5" stroke-dasharray="4,3"/>`) : ''}
             </g>
           `).join("")}
+          ${marker ? `
+            <circle cx="${marker.x}" cy="${marker.y}" r="9" fill="#f59e0b" stroke="#fff" stroke-width="2">
+              <animate attributeName="r" values="7;11;7" dur="1s" repeatCount="indefinite"/>
+            </circle>
+            <text x="${marker.x}" y="${marker.y - 13}" fill="#f59e0b" font-size="10" font-weight="900" text-anchor="middle" dominant-baseline="middle">${marker.label}</text>
+          ` : ''}
         </svg>
+        <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-align:center;">Toca un mueble y luego el punto exacto (metro) dentro de él.</div>
       `;
     }
 
@@ -1999,6 +2104,47 @@
       const isWallOrStand = zone.type === "pared" || zone.type === "floorstand";
       row.style.display = isWallOrStand ? "block" : "none";
       sideRow.style.display = (isWallOrStand && zone.type === "floorstand") ? "block" : "none";
+    }
+
+    function handleZoneMapClick(evt, zoneId, mode) {
+      evt.stopPropagation();
+      const zone = zones.find(z => z.id === zoneId);
+      if (!zone) return;
+      const containerId = mode === "quick" ? "czZoneGrid" : "zoneSelectionGrid";
+      const svg = document.querySelector(`#${containerId} svg`);
+      if (!svg) return;
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return;
+      const pt = svg.createSVGPoint();
+      pt.x = evt.clientX;
+      pt.y = evt.clientY;
+      const svgPt = pt.matrixTransform(ctm.inverse());
+      const unit = 50;
+      const isHoriz = zone.w >= zone.h;
+      const maxM = Math.max(1, Math.floor((isHoriz ? zone.w : zone.h) / unit));
+      let meter, side;
+      if (isHoriz) {
+        const rel = svgPt.x - zone.x;
+        meter = Math.min(maxM, Math.max(1, Math.floor(rel / unit) + 1));
+        if (zone.type === "floorstand") side = (svgPt.y < zone.y + zone.h / 2) ? "frente" : "trasero";
+      } else {
+        const rel = svgPt.y - zone.y;
+        meter = Math.min(maxM, Math.max(1, Math.floor(rel / unit) + 1));
+        if (zone.type === "floorstand") side = (svgPt.x < zone.x + zone.w / 2) ? "frente" : "trasero";
+      }
+      if (mode === "quick") {
+        quickChangeZoneId = zoneId;
+        document.getElementById("czMeter").value = meter;
+        if (side) document.getElementById("czSide").value = side;
+        updateQuickMeterUI();
+        renderQuickZonePicker(zoneId);
+      } else {
+        selectedModalZoneId = zoneId;
+        document.getElementById("formProdMeter").value = meter;
+        if (side) document.getElementById("formProdSide").value = side;
+        updateProductMeterUI();
+        renderZonePicker(zoneId);
+      }
     }
 
     function closeProductModal() {
