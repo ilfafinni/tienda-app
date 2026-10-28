@@ -1419,13 +1419,7 @@
               { facingMode: "environment" },
               cfg,
               (decoded) => {
-                triggerVibrate([80, 50, 80]);
-                document.getElementById("manualCodeInput").value = decoded;
-                const norm = decoded.trim().toUpperCase();
-                if (norm !== lastScannedCode) {
-                  lastScannedCode = norm;
-                  processScannedCode(decoded);
-                }
+                handleCameraScan(decoded);
               },
               () => {}
             );
@@ -1458,13 +1452,7 @@
                 backCameraId,
                 { fps: 20 },
                 (decoded) => {
-                  triggerVibrate([80, 50, 80]);
-                  document.getElementById("manualCodeInput").value = decoded;
-                  const norm = decoded.trim().toUpperCase();
-                  if (norm !== lastScannedCode) {
-                    lastScannedCode = norm;
-                    processScannedCode(decoded);
-                  }
+                  handleCameraScan(decoded);
                 },
                 () => {}
               );
@@ -1509,10 +1497,7 @@
                       await html5QrScanner.stop();
                       html5QrScanner = new Html5Qrcode("cameraContainer");
                       await html5QrScanner.start(target.id, { fps: 20 }, (decoded) => {
-                        triggerVibrate([80, 50, 80]);
-                        document.getElementById("manualCodeInput").value = decoded;
-                        const norm = decoded.trim().toUpperCase();
-                        if (norm !== lastScannedCode) { lastScannedCode = norm; processScannedCode(decoded); }
+                        handleCameraScan(decoded);
                       }, () => {});
                       currentCameraIndex = cams.indexOf(target);
                     } catch (e) { console.warn("auto-switch failed", e); }
@@ -1620,10 +1605,7 @@
         await html5QrScanner.stop();
         html5QrScanner = new Html5Qrcode("cameraContainer");
         await html5QrScanner.start(cam.id, { fps: 20 }, (decoded) => {
-          triggerVibrate([80, 50, 80]);
-          document.getElementById("manualCodeInput").value = decoded;
-          const norm = decoded.trim().toUpperCase();
-          if (norm !== lastScannedCode) { lastScannedCode = norm; processScannedCode(decoded); }
+          handleCameraScan(decoded);
         }, () => {});
       } catch (e) {
         console.warn("switch camera failed", e);
@@ -1666,6 +1648,15 @@
         </svg>
         <div style="font-size:11px; color:var(--text-muted); margin-top:6px; text-align:center; font-weight:600;">🗺️ ${escapeHtml(zone.name)} · Piso ${zone.floor || 1}</div>
       `;
+    }
+
+    function handleCameraScan(decoded) {
+      const now = Date.now();
+      if (now < scanLockUntil) return;
+      document.getElementById("manualCodeInput").value = decoded;
+      lastScannedCode = decoded.trim().toUpperCase();
+      scanLockUntil = Date.now() + 3000;
+      processScannedCode(decoded);
     }
 
     function processScannedCode(rawCode) {
