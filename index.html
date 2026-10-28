@@ -265,6 +265,14 @@
       display: flex;
       gap: 8px;
     }
+    .return-map-wrap svg {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #f8fafc;
+    }
 
     /* NOT FOUND CARD */
     .not-found-card {
@@ -748,6 +756,7 @@
                 <strong id="targetProdPrice">-</strong>
               </div>
             </div>
+            <div class="return-map-wrap" id="returnZoneMap"></div>
             <div class="return-actions">
               <button class="btn btn-block" onclick="viewTargetOnMap()">🗺️ Ver en el Mapa</button>
               <button class="btn btn-secondary" onclick="openReassignModalForScanned()">Cambiar Mueble</button>
@@ -901,7 +910,7 @@
         </div>
         <div class="form-row">
           <label>Nombre del Producto</label>
-          <input type="text" id="formProdName" required placeholder="Ej: Pantalón Cargo Negro">
+          <input type="text" id="formProdName" placeholder="Ej: Pantalón Cargo Negro">
         </div>
         <div style="display: flex; gap: 8px;">
           <div class="form-row" style="flex:1;">
@@ -1064,6 +1073,7 @@
     // HTML5 QR Scanner
     let html5QrScanner = null;
     let isCameraRunning = false;
+    let lastScannedCode = null;
 
     // ================= INICIALIZACIÓN =================
     window.addEventListener("DOMContentLoaded", () => {
@@ -1229,8 +1239,11 @@
           (decoded) => {
             triggerVibrate([80, 50, 80]);
             document.getElementById("manualCodeInput").value = decoded;
-            stopScannerCamera();
-            processScannedCode(decoded);
+            const norm = decoded.trim().toUpperCase();
+            if (norm !== lastScannedCode) {
+              lastScannedCode = norm;
+              processScannedCode(decoded);
+            }
           },
           () => {}
         );
@@ -1255,6 +1268,22 @@
       const btn = document.getElementById("btnCamToggle");
       btn.textContent = "📷 Activar Cámara";
       btn.classList.replace("btn-secondary", "btn-success");
+    }
+
+    function renderReturnZoneMap() {
+      const container = document.getElementById("returnZoneMap");
+      if (!container) return;
+      const zone = highlightedZoneId ? zones.find(z => z.id === highlightedZoneId) : null;
+      if (!zone) { container.innerHTML = ""; return; }
+      container.innerHTML = `
+        <svg viewBox="0 0 1000 800">
+          <rect x="0" y="0" width="1000" height="800" fill="#f8fafc" />
+          <rect x="${zone.x}" y="${zone.y}" width="${zone.w}" height="${zone.h}" rx="12" fill="${zone.color || "#3b82f6"}" opacity="0.85" stroke="#0f172a" stroke-width="2.5" />
+          <text x="${zone.x + zone.w / 2}" y="${zone.y + zone.h / 2}" fill="#ffffff" font-size="18" font-weight="900" text-anchor="middle" dominant-baseline="middle">${escapeHtml(zone.name)}</text>
+          <text x="${zone.x + zone.w / 2}" y="${zone.y + zone.h / 2 + 24}" fill="#ffffff" font-size="12" font-weight="700" text-anchor="middle" dominant-baseline="middle">Piso ${zone.floor || 1}</text>
+        </svg>
+        <div style="font-size:11px; color:var(--text-muted); margin-top:6px; text-align:center; font-weight:600;">🗺️ ${escapeHtml(zone.name)} · Piso ${zone.floor || 1}</div>
+      `;
     }
 
     function processScannedCode(rawCode) {
@@ -1292,9 +1321,12 @@
         }
       } else {
         currentlyScannedItem = { code: norm, isNew: true };
+        highlightedZoneId = null;
         document.getElementById("notFoundMsg").textContent = `El código "${norm}" no existe en el catálogo.`;
         cardNotFound.style.display = "block";
       }
+
+      renderReturnZoneMap();
     }
 
     function viewTargetOnMap() {
@@ -1837,7 +1869,7 @@
       const prod = {
         id,
         code,
-        name: document.getElementById("formProdName").value.trim(),
+        name: document.getElementById("formProdName").value.trim() || code,
         category: document.getElementById("formProdCategory").value,
         size: document.getElementById("formProdSize").value.trim() || null,
         color: document.getElementById("formProdColor").value.trim() || null,
