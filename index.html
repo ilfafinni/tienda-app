@@ -287,6 +287,10 @@
     .return-target-card .return-target-header {
       display: none;
     }
+    #zoneSelectionGrid,
+    #czZoneGrid {
+      touch-action: none;
+    }
     #zoneSelectionGrid svg,
     #czZoneGrid svg {
       width: 100%;
@@ -1017,6 +1021,7 @@
           <button class="floor-pill" id="prodFloor-1" onclick="setProductZoneFloor(1)">Piso 1</button>
           <button class="floor-pill" id="prodFloor-2" onclick="setProductZoneFloor(2)">Piso 2</button>
           <button class="floor-pill" id="prodFloor-3" onclick="setProductZoneFloor(3)">Piso 3</button>
+          <button class="floor-pill" onclick="resetModalMapTransform('zoneSelectionGrid')" style="min-width:40px;">🎯</button>
         </div>
         <div class="form-row" style="flex:0 0 auto; min-height:50vh; display:flex; flex-direction:column; margin-bottom:0;">
           <label style="flex:0 0 auto;">🗺️ ¿En qué Mueble / Zona de la Tienda va?</label>
@@ -1059,6 +1064,7 @@
         <button class="floor-pill" id="czFloor-1" onclick="setChangeZoneFloor(1)">Piso 1</button>
         <button class="floor-pill" id="czFloor-2" onclick="setChangeZoneFloor(2)">Piso 2</button>
         <button class="floor-pill" id="czFloor-3" onclick="setChangeZoneFloor(3)">Piso 3</button>
+        <button class="floor-pill" onclick="resetModalMapTransform('czZoneGrid')" style="min-width:40px;">🎯</button>
       </div>
       <div class="zone-selection-grid" id="czZoneGrid" style="height:60vh; min-height:300px; overflow:hidden;"></div>
       <div id="czMeterRow" style="flex:0 0 auto; display:none; margin-top:6px;">
