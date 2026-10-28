@@ -280,6 +280,17 @@
       border-radius: 10px;
       border: 1px solid var(--border);
       background: #f8fafc;
+      min-height: 240px;
+    }
+    #zoneSelectionGrid svg,
+    #czZoneGrid svg {
+      width: 100%;
+      min-height: 300px;
+      height: auto;
+      border-radius: 12px;
+    }
+    .return-target-card .item-attr-grid {
+      display: none;
     }
 
     /* NOT FOUND CARD */
@@ -632,7 +643,7 @@
     .modal-window {
       background: #fff;
       width: 100%;
-      max-height: 85vh;
+      max-height: 92vh;
       border-radius: 20px 20px 0 0;
       padding: 18px;
       overflow-y: auto;
@@ -910,9 +921,11 @@
       </h2>
       <form id="formProduct" onsubmit="handleProductSubmit(event)">
         <input type="hidden" id="formProdId">
+        <div id="formProdCodeRow">
         <div class="form-row">
           <label>Código de Barras / Etiqueta</label>
           <input type="text" id="formProdCode" required placeholder="Ej: PNT-001 o número de código">
+        </div>
         </div>
         <div id="formProdDetails">
         <div class="form-row">
@@ -1834,6 +1847,7 @@
 
       renderZonePicker(prefillZoneId);
       document.getElementById("formProdDetails").style.display = quick ? "none" : "block";
+      document.getElementById("formProdCodeRow").style.display = quick ? "none" : "block";
       document.getElementById("modalProductOverlay").style.display = "flex";
     }
 
@@ -1850,6 +1864,7 @@
 
       renderZonePicker(item.zone_id || null);
       document.getElementById("formProdDetails").style.display = "block";
+      document.getElementById("formProdCodeRow").style.display = "block";
       document.getElementById("modalProductOverlay").style.display = "flex";
     }
 
