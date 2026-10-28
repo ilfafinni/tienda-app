@@ -1465,7 +1465,7 @@
           document.getElementById("targetZoneName").textContent = zone ? zone.name : "Zona desconocida";
           document.getElementById("targetZoneDetail").textContent = (zone ? `Piso ${zone.floor || 1}` : "") + (found.shelf_position ? ` · ${found.shelf_position}` : "");
           document.getElementById("targetProdCode").textContent = found.code;
-          document.getElementById("targetProdName").textContent = found.name;
+          document.getElementById("targetProdName").textContent = (found.name && found.name !== found.code) ? found.name : "Prenda sin nombre";
           document.getElementById("targetProdMeta").textContent = `${found.size || "-"} / ${found.color || "-"}`;
           document.getElementById("targetProdPrice").textContent = `$${(found.price || 0).toLocaleString("es-CL")}`;
 
@@ -2649,7 +2649,9 @@
           currentFloor = r.floor;
           html += '<div style="font-weight:900; font-size:12px; color:var(--primary); margin:10px 0 4px; padding-top:6px; border-top:1px solid var(--border);">Piso ' + r.floor + '</div>';
         }
-        html += '<div class="sheet-prod-item" style="padding:6px 0;"><div class="info"><strong>' + (idx+1) + '. ' + escapeHtml(r.name) + '</strong><span>' + escapeHtml(r.code) + ' - ' + escapeHtml(r.zone_name) + (r.shelf_position ? ' - ' + escapeHtml(r.shelf_position) : '') + '</span></div><button class="btn-reassign" onclick="removeFromRoute(\'' + r.code + '\')" style="margin-left:8px;">✕</button></div>';
+        const dispName = (r.name && r.name !== r.code) ? r.name : 'Prenda sin nombre';
+        const shortC = (r.code && r.code.length > 16) ? r.code.slice(0, 6) + '\u2026' + r.code.slice(-4) : (r.code || '');
+        html += '<div class="sheet-prod-item" style="padding:6px 0;"><div class="info"><strong>' + (idx + 1) + '. ' + escapeHtml(dispName) + '</strong><span>' + escapeHtml(shortC) + ' - ' + escapeHtml(r.zone_name) + (r.shelf_position ? ' - ' + escapeHtml(r.shelf_position) : '') + '</span></div><button class="btn-reassign" onclick="removeFromRoute(\'' + r.code + '\')" style="margin-left:8px;">✕</button></div>';
       });
       list.innerHTML = html;
 
