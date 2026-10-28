@@ -747,6 +747,7 @@
             <div id="cameraExtraControls" style="display: none; position: absolute; bottom: 8px; left: 8px; right: 8px; gap: 8px; z-index: 5;">
               <button class="btn btn-secondary btn-block" id="btnTorch" onclick="toggleTorch()">🔦 Linterna</button>
               <button class="btn btn-secondary btn-block" id="btnZoom" onclick="toggleZoom()">🔍 Zoom 2x</button>
+              <button class="btn btn-secondary btn-block" id="btnSwitchCam" onclick="switchCamera()">🔄 Cambiar cámara</button>
             </div>
           </div>
 
@@ -1196,6 +1197,8 @@
     let lastScannedCode = null;
     let torchOn = false;
     let zoomOn = false;
+    let availableCameras = [];
+    let currentCameraIndex = 0;
 
     // ================= INICIALIZACIÓN =================
     window.addEventListener("DOMContentLoaded", () => {
@@ -1460,6 +1463,46 @@
         const btnZoom = document.getElementById("btnZoom");
         if (btnTorch) { btnTorch.textContent = "🔦 Linterna"; btnTorch.style.display = ""; }
         if (btnZoom) { btnZoom.textContent = "🔍 Zoom 2x"; btnZoom.style.display = ""; }
+        // Enumerar cámaras y auto-cambiar si se abrió la frontal
+        (async () => {
+          try {
+            if (typeof Html5Qrcode.getCameras === "function") {
+              const cams = await Html5Qrcode.getCameras();
+              if (Array.isArray(cams) && cams.length) {
+                availableCameras = cams;
+                let isFront = false;
+                try {
+                  const track = (typeof html5QrScanner.getRunningTrack === "function") ? html5QrScanner.getRunningTrack() : null;
+                  const label = (track && track.label) ? track.label.toLowerCase() : "";
+                  if (/front|selfie|user|frontal/i.test(label)) isFront = true;
+                } catch (e) {}
+                if (isFront && cams.length > 1) {
+                  const back = cams.find(c => /back|rear|environment|trasera/i.test(c.label || ""));
+                  const target = back ? back : cams[cams.length - 1];
+                  if (target && target.id) {
+                    try {
+                      await html5QrScanner.stop();
+                      html5QrScanner = new Html5Qrcode("cameraContainer");
+                      await html5QrScanner.start(target.id, { fps: 20 }, (decoded) => {
+                        triggerVibrate([80, 50, 80]);
+                        document.getElementById("manualCodeInput").value = decoded;
+                        const norm = decoded.trim().toUpperCase();
+                        if (norm !== lastScannedCode) { lastScannedCode = norm; processScannedCode(decoded); }
+                      }, () => {});
+                      currentCameraIndex = cams.indexOf(target);
+                    } catch (e) { console.warn("auto-switch failed", e); }
+                  }
+                } else {
+                  try {
+                    const track = (typeof html5QrScanner.getRunningTrack === "function") ? html5QrScanner.getRunningTrack() : null;
+                    const idx = cams.findIndex(c => track && c.id === track.id);
+                    if (idx >= 0) currentCameraIndex = idx;
+                  } catch (e) {}
+                }
+              }
+            }
+          } catch (e) { console.warn("enumerate failed", e); }
+        })();
         // Mejoras de precisión en segundo plano (no bloquean el inicio)
         (async () => {
           try {
@@ -1529,6 +1572,34 @@
           if (track && track.applyConstraints) {
             await track.applyConstraints({ zoom: z });
           }
+
+    async function switchCamera() {
+      if (!html5QrScanner || !isCameraRunning) return;
+      if (!availableCameras.length) {
+        try {
+          if (typeof Html5Qrcode.getCameras === "function") {
+            availableCameras = await Html5Qrcode.getCameras();
+          }
+        } catch (e) { console.warn("getCameras failed", e); availableCameras = []; }
+      }
+      if (!availableCameras.length) return;
+      currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
+      const cam = availableCameras[currentCameraIndex];
+      if (!cam) return;
+      try {
+        await html5QrScanner.stop();
+        html5QrScanner = new Html5Qrcode("cameraContainer");
+        await html5QrScanner.start(cam.id, { fps: 20 }, (decoded) => {
+          triggerVibrate([80, 50, 80]);
+          document.getElementById("manualCodeInput").value = decoded;
+          const norm = decoded.trim().toUpperCase();
+          if (norm !== lastScannedCode) { lastScannedCode = norm; processScannedCode(decoded); }
+        }, () => {});
+      } catch (e) {
+        console.warn("switch camera failed", e);
+      }
+    }
+
         } catch (e2) {}
       }
       const btn = document.getElementById("btnZoom");
