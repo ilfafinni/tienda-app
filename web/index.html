@@ -1215,6 +1215,7 @@
     let html5QrScanner = null;
     let isCameraRunning = false;
     let lastScannedCode = null;
+    let lastScannedProductId = null;
     let torchOn = false;
     let zoomOn = false;
     let availableCameras = [];
@@ -1677,6 +1678,11 @@
         const codes = (p.codes && p.codes.length) ? p.codes : [p.code];
         return codes.some(c => (c || "").toUpperCase() === norm);
       });
+
+      // Dedupe por producto: una etiqueta con varios códigos debe leerse como UN solo producto.
+      // Si ya procesamos este producto (cualquier código suyo), ignorar escaneos repetidos.
+      if (found && found.id === lastScannedProductId) return;
+      if (found) lastScannedProductId = found.id;
 
       if (found) {
         currentlyScannedItem = found;
