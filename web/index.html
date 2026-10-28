@@ -2742,8 +2742,8 @@
       if (!container) return;
       const svg = container.querySelector('svg');
       if (!svg) return;
-      const vp = svg.querySelector('g.modal-viewport');
-      if (!vp) return;
+      const vp = svg.querySelector('g.modal-viewport') || svg.querySelector('.modal-viewport');
+      if (!vp) { console.warn('no modal-viewport g found'); return; }
       const st = modalMapState[containerId];
       if (!st) return;
       vp.setAttribute('transform', 'translate(' + st.tx + ',' + st.ty + ') scale(' + st.scale + ')');
