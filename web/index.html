@@ -1012,14 +1012,15 @@
         <span>Cambiar Mueble</span>
         <button class="btn btn-small btn-secondary" onclick="closeChangeZoneModal()">✕</button>
       </h2>
-      <div style="background: #f1f5f9; padding: 10px; border-radius: 10px; margin-bottom: 12px;">
-        <strong id="czProdTitle" style="font-size: 14px; display:block;">-</strong>
-        <span id="czProdMeta" style="font-size: 12px; color: var(--text-muted);">-</span>
+      <div style="background: #f1f5f9; padding: 6px 10px; border-radius: 8px; margin-bottom: 8px;">
+        <strong id="czProdTitle" style="font-size: 13px; display:block;">-</strong>
       </div>
-      <div class="form-row">
-        <label>Selecciona la nueva ubicación:</label>
-        <div class="zone-selection-grid" id="czZoneGrid"></div>
+      <div class="floor-selector-bar" id="czFloorBar" style="margin-bottom:8px;">
+        <button class="floor-pill" id="czFloor-1" onclick="setChangeZoneFloor(1)">Piso 1</button>
+        <button class="floor-pill" id="czFloor-2" onclick="setChangeZoneFloor(2)">Piso 2</button>
+        <button class="floor-pill" id="czFloor-3" onclick="setChangeZoneFloor(3)">Piso 3</button>
       </div>
+      <div class="zone-selection-grid" id="czZoneGrid" style="min-height: 55vh;"></div>
       <div id="czMeterRow" style="display:none;">
         <div style="display: flex; gap: 8px;">
           <div class="form-row" style="flex:1;">
@@ -1034,10 +1035,6 @@
             </select>
           </div>
         </div>
-      </div>
-      <div class="form-row">
-        <label>Detalle de posición (opcional)</label>
-        <input type="text" id="czShelfPos" placeholder="Ej: Perchero Norte, Fila A">
       </div>
       <div class="modal-buttons">
         <button type="button" class="btn btn-secondary" style="flex:1;" onclick="closeChangeZoneModal()">Cancelar</button>
@@ -2091,6 +2088,7 @@
       quickChangeZoneId = currentId;
       const container = document.getElementById("czZoneGrid");
       if (!container) return;
+      const floorZones = changeZoneFloor ? zones.filter(z => (z.floor || 1) === changeZoneFloor) : zones;
       const zone = zones.find(z => z.id === currentId);
       const meter = parseInt(document.getElementById("czMeter").value) || null;
       const side = document.getElementById("czSide").value || "frente";
@@ -2115,7 +2113,7 @@
       }
       container.innerHTML = `
         <svg viewBox="0 0 1000 800" style="width:100%; height:auto; border:1px solid var(--border); border-radius:10px; background:#f8fafc;">
-          ${zones.map(z => `
+          ${floorZones.map(z => `
             <g onclick="handleZoneMapClick(event, ${z.id}, 'quick')" style="cursor:pointer;">
               <rect x="${z.x}" y="${z.y}" width="${z.w}" height="${z.h}" rx="8" fill="${z.id === currentId ? (z.color || '#3b82f6') : '#cbd5e1'}" opacity="${z.id === currentId ? 0.9 : 0.6}" stroke="#0f172a" stroke-width="1.5" />
               <text x="${z.x + z.w / 2}" y="${z.y + z.h / 2}" fill="#fff" font-size="11" font-weight="700" text-anchor="middle" dominant-baseline="middle">${escapeHtml(z.name)}</text>
@@ -2237,6 +2235,7 @@
     // Modal: Cambiar Mueble Rápido
     let quickChangeCode = null;
     let quickChangeZoneId = null;
+    let changeZoneFloor = null;
 
     function openChangeZoneModal(code) {
       const p = products.find(item => item.code === code);
@@ -2244,16 +2243,12 @@
       quickChangeCode = code;
       quickChangeZoneId = p.zone_id;
 
-      document.getElementById("czProdTitle").textContent = `${p.name} (${p.code})`;
-      const curZone = zones.find(z => z.id === p.zone_id);
-      document.getElementById("czProdMeta").textContent = curZone ? `Ubicación actual: ${curZone.name} (Piso ${curZone.floor || 1})` : "Sin mueble asignado";
-      document.getElementById("czShelfPos").value = p.shelf_position || "";
+      document.getElementById("czProdTitle").textContent = p.name || p.code;
       document.getElementById("czMeter").value = p.meter_position || "";
       document.getElementById("czSide").value = p.side || "frente";
 
-      renderQuickZonePicker(p.zone_id || null);
-      updateQuickMeterUI();
-      document.getElementById("modalChangeZoneOverlay").style.display = "flex";
+      changeZoneFloor = p.zone_id ? (zones.find(z => z.id === p.zone_id)?.floor || 1) : 1;
+      setChangeZoneFloor(changeZoneFloor);
     }
 
     function pickQuickZone(id) {
@@ -2270,6 +2265,22 @@
       const isWallOrStand = zone.type === "pared" || zone.type === "floorstand";
       row.style.display = isWallOrStand ? "block" : "none";
       sideRow.style.display = (isWallOrStand && zone.type === "floorstand") ? "block" : "none";
+    }
+
+    function setChangeZoneFloor(floor) {
+      changeZoneFloor = floor;
+      document.querySelectorAll("#czFloorBar .floor-pill").forEach(p => p.classList.remove("active"));
+      const pill = document.getElementById(`czFloor-${floor}`);
+      if (pill) pill.classList.add("active");
+      if (quickChangeZoneId) {
+        const z = zones.find(x => x.id === quickChangeZoneId);
+        if (!z || (z.floor || 1) !== floor) {
+          quickChangeZoneId = null;
+          document.getElementById("czMeter").value = "";
+          updateQuickMeterUI();
+        }
+      }
+      renderQuickZonePicker(quickChangeZoneId);
     }
 
     function closeChangeZoneModal() {
@@ -2296,7 +2307,7 @@
       p.side = isFloorstand ? side : null;
       p.shelf_position = meter
         ? `Metro ${meter}` + (isFloorstand && side ? ` · ${side === "frente" ? "Frente" : "Trasero"}` : "")
-        : (document.getElementById("czShelfPos").value.trim() || null);
+        : null;
 
       saveToLocalStorage();
       renderProductsList(products);
