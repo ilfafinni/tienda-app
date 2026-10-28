@@ -1102,6 +1102,16 @@
         </div>
         <div style="display:flex; gap:8px;">
           <div class="form-row" style="flex:1;">
+            <label>Ancho (m)</label>
+            <input type="number" id="formZoneWm" min="0.5" step="0.5" placeholder="Ej: 4">
+          </div>
+          <div class="form-row" style="flex:1;">
+            <label>Alto (m)</label>
+            <input type="number" id="formZoneHm" min="0.5" step="0.5" placeholder="Ej: 1">
+          </div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <div class="form-row" style="flex:1;">
             <label>Color</label>
             <input type="color" id="formZoneColor" value="#3b82f6" style="height:44px; padding:2px;">
           </div>
@@ -1253,9 +1263,11 @@
           const srvProds = await resP.json();
 
           if (Array.isArray(srvZones) && srvZones.length > 0) {
-            const mergedZones = [...srvZones];
-            zones.forEach(z => {
-              if (!srvZones.some(sz => sz.id === z.id)) mergedZones.push(z);
+            const mergedZones = [...zones]; // keep local (edited positions)
+            srvZones.forEach(sz => {
+              const idx = mergedZones.findIndex(z => z.id === sz.id);
+              if (idx === -1) mergedZones.push(sz); // add new server zones
+              // else keep local version (don't overwrite user edits)
             });
             zones = mergedZones;
           }
@@ -1547,7 +1559,18 @@
         return `${sep}<text x="12" y="${y + 22}" fill="#64748b" font-size="16" font-weight="900" opacity="0.85">PISO ${f}</text>`;
       }).join("") : "";
 
-      g.innerHTML = floorLabels + visibleZones.map(z => {
+      // Cuadrícula de metros (líneas cada 50u = 1m, etiquetas cada 5m)
+      let meterGridHtml = "";
+      for (let x = 0; x <= 1000; x += 50) {
+        meterGridHtml += `<line x1="${x}" y1="0" x2="${x}" y2="${viewBoxH}" stroke="rgba(100,116,139,0.12)" stroke-width="1"/>`;
+        if (x > 0 && x % 250 === 0) meterGridHtml += `<text x="${x}" y="12" fill="#94a3b8" font-size="9" font-weight="700" text-anchor="middle">${x/50}m</text>`;
+      }
+      for (let y = 0; y <= viewBoxH; y += 50) {
+        meterGridHtml += `<line x1="0" y1="${y}" x2="1000" y2="${y}" stroke="rgba(100,116,139,0.12)" stroke-width="1"/>`;
+        if (y > 0 && y % 250 === 0 && y < viewBoxH) meterGridHtml += `<text x="6" y="${y}" fill="#94a3b8" font-size="9" font-weight="700" dominant-baseline="middle">${y/50}m</text>`;
+      }
+
+      g.innerHTML = meterGridHtml + floorLabels + visibleZones.map(z => {
         const isHighlight = z.id === highlightedZoneId;
         const isDragging = z.id === draggingZoneId;
         const count = products.filter(p => p.zone_id === z.id).length;
@@ -1563,6 +1586,7 @@
               fill="${fillCol}" opacity="${isDragging ? 0.55 : 1}"></rect>
             <text class="zone-title" x="${cx}" y="${cy - 7}">${escapeHtml(z.name)}</text>
             <text class="zone-count" x="${cx}" y="${cy + 12}">${count} ${count === 1 ? 'prenda' : 'prendas'}</text>
+            <text class="zone-meters" x="${cx}" y="${cy + 26}" font-size="9" fill="rgba(255,255,255,0.8)" text-anchor="middle">${(z.w/50).toFixed(1)}m x ${(z.h/50).toFixed(1)}m</text>
             ${z.type === "floorstand" ? (z.w >= z.h
               ? `<line x1="${cx}" y1="${z.y + 4}" x2="${cx}" y2="${z.y + z.h - 4}" stroke="rgba(255,255,255,0.55)" stroke-width="1.5" stroke-dasharray="4,3"/>`
               : `<line x1="${z.x + 4}" y1="${cy}" x2="${z.x + z.w - 4}" y2="${cy}" stroke="rgba(255,255,255,0.55)" stroke-width="1.5" stroke-dasharray="4,3"/>`) : ''}
@@ -1890,6 +1914,8 @@
       document.getElementById("formZoneY").value = y;
       document.getElementById("formZoneW").value = w;
       document.getElementById("formZoneH").value = h;
+      document.getElementById("formZoneWm").value = (w / 50).toFixed(1);
+      document.getElementById("formZoneHm").value = (h / 50).toFixed(1);
       document.getElementById("formZoneName").value = "";
       document.getElementById("formZoneType").value = "floorstand";
       document.getElementById("formZoneColor").value = "#3b82f6";
@@ -1907,6 +1933,8 @@
       document.getElementById("formZoneY").value = zone.y;
       document.getElementById("formZoneW").value = zone.w;
       document.getElementById("formZoneH").value = zone.h;
+      document.getElementById("formZoneWm").value = (zone.w / 50).toFixed(1);
+      document.getElementById("formZoneHm").value = (zone.h / 50).toFixed(1);
       document.getElementById("formZoneName").value = zone.name;
       document.getElementById("formZoneType").value = zone.type;
       document.getElementById("formZoneColor").value = zone.color || "#3b82f6";
@@ -1926,6 +1954,11 @@
       const isNew = !idVal;
       const id = isNew ? (zones.length ? Math.max(...zones.map(z => z.id)) + 1 : 1) : parseInt(idVal);
 
+      const wm = parseFloat(document.getElementById("formZoneWm").value);
+      const hm = parseFloat(document.getElementById("formZoneHm").value);
+      const w = (wm > 0 ? Math.round(wm * 50) : (parseInt(document.getElementById("formZoneW").value) || 180));
+      const h = (hm > 0 ? Math.round(hm * 50) : (parseInt(document.getElementById("formZoneH").value) || 120));
+
       const zoneObj = {
         id,
         name: document.getElementById("formZoneName").value.trim(),
@@ -1934,8 +1967,8 @@
         floor: parseInt(document.getElementById("formZoneFloor").value) || 1,
         x: parseInt(document.getElementById("formZoneX").value) || 250,
         y: parseInt(document.getElementById("formZoneY").value) || 200,
-        w: parseInt(document.getElementById("formZoneW").value) || 180,
-        h: parseInt(document.getElementById("formZoneH").value) || 120,
+        w: w,
+        h: h,
       };
 
       if (isNew) {
