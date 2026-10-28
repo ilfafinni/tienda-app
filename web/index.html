@@ -1308,7 +1308,7 @@
         html5QrScanner = new Html5Qrcode("cameraContainer");
         await html5QrScanner.start(
           { facingMode: "environment" },
-          { fps: 12, qrbox: { width: 260, height: 260 } },
+          { fps: 20, qrbox: { width: 200, height: 200 } },
           (decoded) => {
             triggerVibrate([80, 50, 80]);
             document.getElementById("manualCodeInput").value = decoded;
