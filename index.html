@@ -113,8 +113,9 @@
       overflow: hidden !important;
     }
 
-    section.screen { display: none; height: 100%; flex-direction: column; }
+    section.screen { display: none; min-height: 100%; flex-direction: column; }
     section.screen.active { display: flex; }
+    section.screen#viewMap { height: 100%; overflow: hidden; }
 
     /* BOTTOM NAV */
     nav.bottom-bar {
