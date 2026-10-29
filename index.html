@@ -2333,7 +2333,7 @@
               <strong>${escapeHtml(p.name)}</strong>
               <span>${escapeHtml(prettyCode(p.code))} · ${p.size || '-'} / ${p.color || '-'}</span>
             </div>
-            <button class="btn-reassign" onclick="openChangeZoneModal('${p.code}')">Mover</button>
+            <button class="btn-reassign" onclick="openChangeZoneModalById(${p.id})">Mover</button>
           </div>
         `).join("");
       }
@@ -2970,9 +2970,11 @@
     let changeZoneFloor = null;
 
     function openChangeZoneModal(code) {
-      const p = products.find(item => item.code === code);
+      const key = normalizeCode(code);
+      const p = products.find(item => item.code === code)
+             || products.find(item => normalizeCode(item.code) === key);
       if (!p) return;
-      quickChangeCode = code;
+      quickChangeCode = p.code;
       quickChangeZoneId = p.zone_id;
 
       document.getElementById("czMeter").value = p.meter_position || "";
@@ -2982,6 +2984,11 @@
       setChangeZoneFloor(changeZoneFloor);
       centerModalMap('czZoneGrid');
       document.getElementById("modalChangeZoneOverlay").style.display = "flex";
+    }
+
+    function openChangeZoneModalById(id) {
+      const p = products.find(item => item.id == id);
+      if (p) openChangeZoneModal(p.code);
     }
 
     function pickQuickZone(id) {
@@ -3049,7 +3056,7 @@
       closeChangeZoneModal();
 
       // Actualizar la ruta si el producto estaba en ella
-      const ri = routeItems.find(r => r.code === (p.code || "").toUpperCase());
+      const ri = routeItems.find(r => normalizeCode(r.code) === normalizeCode(p.code));
       if (ri) {
         const z = zones.find(x => x.id === p.zone_id);
         ri.zone_id = p.zone_id;
@@ -3147,7 +3154,7 @@
         alert("Primero asigna un mueble a esta prenda para poder agregarla a la ruta.");
         return;
       }
-      if (routeItems.some(r => r.code === code)) {
+      if (routeItems.some(r => normalizeCode(r.code) === normalizeCode(code))) {
         alert("Esta prenda ya está en la ruta.");
         return;
       }
@@ -3192,7 +3199,8 @@
           const c = prettyCode(r.code);
           return (c && c.length > 16) ? c.slice(0, 6) + '\u2026' + c.slice(-4) : (c || '');
         })();
-        html += '<div class="sheet-prod-item" style="padding:6px 0;"><div class="info"><strong>' + (idx + 1) + '. ' + escapeHtml(dispName) + '</strong><span>' + escapeHtml(shortC) + ' - ' + escapeHtml(r.zone_name) + (r.shelf_position ? ' - ' + escapeHtml(r.shelf_position) : '') + '</span></div><button class="btn-reassign" onclick="removeFromRoute(\'' + r.code + '\')" style="margin-left:8px;">✕</button></div>';
+        const origIdx = routeItems.indexOf(r);
+        html += '<div class="sheet-prod-item" style="padding:6px 0;"><div class="info"><strong>' + (idx + 1) + '. ' + escapeHtml(dispName) + '</strong><span>' + escapeHtml(shortC) + ' - ' + escapeHtml(r.zone_name) + (r.shelf_position ? ' - ' + escapeHtml(r.shelf_position) : '') + '</span></div><button class="btn-reassign" onclick="removeFromRouteAt(' + origIdx + ')" style="margin-left:8px;">✕</button></div>';
       });
       list.innerHTML = html;
 
@@ -3305,8 +3313,15 @@
     }
 
     function removeFromRoute(code) {
-      const c = (code || "").toUpperCase();
-      routeItems = routeItems.filter(r => (r.code || "").toUpperCase() !== c);
+      const c = normalizeCode(code);
+      routeItems = routeItems.filter(r => normalizeCode(r.code) !== c);
+      saveRoute();
+      renderRoute();
+    }
+
+    function removeFromRouteAt(i) {
+      if (i < 0 || i >= routeItems.length) return;
+      routeItems.splice(i, 1);
       saveRoute();
       renderRoute();
     }
