@@ -757,12 +757,11 @@
               <button class="btn btn-secondary btn-block" id="btnZoom" onclick="toggleZoom()">🔍 Zoom 2x</button>
               <button class="btn btn-secondary btn-block" id="btnSwitchCam" onclick="switchCamera()">🔄 Cambiar cámara</button>
             </div>
-          </div>
-
-          <div style="display: flex; gap: 8px; margin-top: 10px;">
-            <button class="btn btn-success btn-block" id="btnCamToggle" onclick="toggleScannerCamera()">
-              📷 Activar Cámara
-            </button>
+            <div style="position: absolute; bottom: 8px; left: 8px; right: 8px; z-index: 6;">
+              <button class="btn btn-success btn-block" id="btnCamToggle" onclick="toggleScannerCamera()">
+                📷 Activar Cámara
+              </button>
+            </div>
           </div>
 
           <div class="scan-input-group">
