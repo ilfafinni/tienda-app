@@ -1702,16 +1702,19 @@
           document.getElementById("targetProdPrice").textContent = `$${(found.price || 0).toLocaleString("es-CL")}`;
 
           cardTarget.style.display = "block";
+          cardTarget.style.borderColor = "#22c55e";
         } else {
           highlightedZoneId = null;
           document.getElementById("unassignedText").textContent = `"${found.name}" (${found.code}) no tiene mueble asignado.`;
           cardUnassigned.style.display = "block";
+          cardUnassigned.style.borderColor = "#22c55e";
         }
       } else {
         currentlyScannedItem = { code: norm, isNew: true };
         highlightedZoneId = null;
         document.getElementById("notFoundMsg").textContent = `El código "${norm}" no existe en el catálogo.`;
         cardNotFound.style.display = "block";
+        cardNotFound.style.borderColor = "#ef4444";
       }
 
       renderReturnZoneMap();
