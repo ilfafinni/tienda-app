@@ -1475,8 +1475,8 @@
         // La enumeración de cámaras (getCameras) es lenta y bloquea; solo se usa como fallback.
         let started = false;
         const fastCfgs = [
-          { fps: 20 },
-          { fps: 20, videoConstraints: { facingMode: "environment" } }
+          { fps: 20, experimentalFeatures: { useBarCodeDetectorIfSupported: true } },
+          { fps: 20, videoConstraints: { facingMode: "environment" }, experimentalFeatures: { useBarCodeDetectorIfSupported: true } }
         ];
         for (const cfg of fastCfgs) {
           try {
@@ -1516,7 +1516,7 @@
               html5QrScanner = new Html5Qrcode("cameraContainer");
               await html5QrScanner.start(
                 backCameraId,
-                { fps: 20 },
+                { fps: 20, experimentalFeatures: { useBarCodeDetectorIfSupported: true } },
                 (decoded) => {
                   handleCameraScan(decoded);
                 },
@@ -1562,7 +1562,7 @@
                     try {
                       await html5QrScanner.stop();
                       html5QrScanner = new Html5Qrcode("cameraContainer");
-                      await html5QrScanner.start(target.id, { fps: 20 }, (decoded) => {
+                      await html5QrScanner.start(target.id, { fps: 20, experimentalFeatures: { useBarCodeDetectorIfSupported: true } }, (decoded) => {
                         handleCameraScan(decoded);
                       }, () => {});
                       currentCameraIndex = cams.indexOf(target);
@@ -1677,7 +1677,7 @@
       try {
         await html5QrScanner.stop();
         html5QrScanner = new Html5Qrcode("cameraContainer");
-        await html5QrScanner.start(cam.id, { fps: 20 }, (decoded) => {
+        await html5QrScanner.start(cam.id, { fps: 20, experimentalFeatures: { useBarCodeDetectorIfSupported: true } }, (decoded) => {
           handleCameraScan(decoded);
         }, () => {});
       } catch (e) {
@@ -1729,8 +1729,35 @@
       processScannedCode(decoded);
     }
 
+    // ===== Normalización de códigos (soporta GS1 / Data Matrix) =====
+    // Quita separadores invisibles (GS \x1d), paréntesis de AIs, espacios, guiones, etc.
+    // Así "(01)0730...(10)338464" y "\x1d010730...10 338464" se comparan iguales.
+    function normalizeCode(raw) {
+      return String(raw == null ? "" : raw).toUpperCase().replace(/[^A-Z0-9]/g, "");
+    }
+    function prettyCode(raw) {
+      return String(raw == null ? "" : raw).toUpperCase().replace(/\u001d/g, " ").replace(/\s+/g, " ").trim();
+    }
+    function gtinOf(raw) {
+      const n = normalizeCode(raw);
+      const m = n.match(/01(\d{14})/);
+      if (m) return m[1];
+      if (n.length === 8 || n.length === 12 || n.length === 13 || n.length === 14) return n;
+      return null;
+    }
+
+    function productMatchesCode(p, raw, canonical) {
+      const codes = (p.codes && p.codes.length) ? p.codes : [p.code];
+      return codes.some(c => {
+        if (!c) return false;
+        if (normalizeCode(c) === canonical) return true;
+        return prettyCode(c) === prettyCode(raw);
+      });
+    }
+
     function processScannedCode(rawCode) {
-      const norm = rawCode.trim().toUpperCase();
+      const rawTrim = String(rawCode == null ? "" : rawCode).trim();
+      const canonical = normalizeCode(rawTrim);
       const cardTarget = document.getElementById("cardReturnTarget");
       const cardNotFound = document.getElementById("cardNotFound");
       const cardUnassigned = document.getElementById("cardUnassignedZone");
@@ -1739,14 +1766,22 @@
       cardNotFound.style.display = "none";
       cardUnassigned.style.display = "none";
 
-      const found = products.find(p => {
-        const codes = (p.codes && p.codes.length) ? p.codes : [p.code];
-        return codes.some(c => (c || "").toUpperCase() === norm);
-      });
+      // 1) Coincidencia directa/normalizada (ignora GS1, paréntesis, guiones)
+      let found = products.find(p => productMatchesCode(p, rawTrim, canonical));
+      // 2) Respaldo por GTIN (01 + 14 dígitos) por si el código viene incompleto
+      if (!found && canonical) {
+        const g = gtinOf(rawTrim);
+        if (g) {
+          found = products.find(p => {
+            const codes = (p.codes && p.codes.length) ? p.codes : [p.code];
+            return codes.some(c => c && gtinOf(c) === g);
+          });
+        }
+      }
 
       // Dedupe por producto: una etiqueta con varios códigos debe leerse como UN solo producto.
       // Si ya procesamos este producto (cualquier código suyo), ignorar escaneos repetidos.
-      const scanKey = found ? ("p:" + found.id) : ("c:" + norm);
+      const scanKey = found ? ("p:" + found.id) : ("c:" + canonical);
       const nowScan = Date.now();
       if (scanKey === lastScanKey && (nowScan - lastScanAt) < 1500) return;
       lastScanKey = scanKey;
@@ -1763,11 +1798,11 @@
 
           document.getElementById("targetZoneName").textContent = zone ? zone.name : "Zona desconocida";
           document.getElementById("targetZoneDetail").textContent = (zone ? `Piso ${zone.floor || 1}` : "") + (found.shelf_position ? ` · ${found.shelf_position}` : "");
-          document.getElementById("targetProdCode").textContent = found.code;
+          document.getElementById("targetProdCode").textContent = prettyCode(found.code);
           document.getElementById("targetProdName").textContent = (found.name && found.name !== found.code) ? found.name : "Prenda sin nombre";
           // Mostrar todos los códigos del producto para que se vea la conexión (una prenda = varios códigos)
           const allCodes = (found.codes && found.codes.length) ? found.codes.filter(Boolean) : [found.code];
-          document.getElementById("targetProdCodes").textContent = allCodes.join(" · ");
+          document.getElementById("targetProdCodes").textContent = allCodes.map(prettyCode).join(" · ");
           document.getElementById("targetProdCodes").parentElement.style.display = allCodes.length > 1 ? "" : "none";
           document.getElementById("targetProdMeta").textContent = `${found.size || "-"} / ${found.color || "-"}`;
           document.getElementById("targetProdPrice").textContent = `$${(found.price || 0).toLocaleString("es-CL")}`;
@@ -1776,14 +1811,14 @@
           cardTarget.style.borderColor = "#22c55e";
         } else {
           highlightedZoneId = null;
-          document.getElementById("unassignedText").textContent = `"${found.name}" (${found.code}) no tiene mueble asignado.`;
+          document.getElementById("unassignedText").textContent = `"${found.name}" (${prettyCode(found.code)}) no tiene mueble asignado.`;
           cardUnassigned.style.display = "block";
           cardUnassigned.style.borderColor = "#22c55e";
         }
       } else {
-        currentlyScannedItem = { code: norm, isNew: true };
+        currentlyScannedItem = { code: prettyCode(rawTrim), isNew: true };
         highlightedZoneId = null;
-        document.getElementById("notFoundMsg").textContent = `El código "${norm}" no existe en el catálogo.`;
+        document.getElementById("notFoundMsg").textContent = `El código "${prettyCode(rawTrim)}" no existe en el catálogo.`;
         cardNotFound.style.display = "block";
         cardNotFound.style.borderColor = "#ef4444";
       }
@@ -2296,7 +2331,7 @@
           <div class="sheet-prod-item">
             <div class="info" onclick="openEditProductModalById(${p.id})">
               <strong>${escapeHtml(p.name)}</strong>
-              <span>${escapeHtml(p.code)} · ${p.size || '-'} / ${p.color || '-'}</span>
+              <span>${escapeHtml(prettyCode(p.code))} · ${p.size || '-'} / ${p.color || '-'}</span>
             </div>
             <button class="btn-reassign" onclick="openChangeZoneModal('${p.code}')">Mover</button>
           </div>
@@ -2758,7 +2793,7 @@
       list.innerHTML = filtered.map(p => `
         <div class="product-row" onclick="linkCodeToProduct(${p.id})" style="cursor:pointer;">
           <div>
-            <div class="code">${escapeHtml(p.code)}</div>
+            <div class="code">${escapeHtml(prettyCode(p.code))}</div>
             <div class="title">${escapeHtml(p.name)}</div>
             <div class="sub">${p.category || ''} · Talla: ${p.size || '-'} · Color: ${p.color || '-'}</div>
           </div>
@@ -3083,7 +3118,7 @@
         return `
           <div class="product-row" onclick="openEditProductModalById(${p.id})">
             <div>
-              <div class="code">${escapeHtml(p.code)}</div>
+              <div class="code">${escapeHtml(prettyCode(p.code))}</div>
               <div class="title">${escapeHtml(p.name)}</div>
               <div class="sub">${p.category} · Talla: ${p.size || '-'} · Color: ${p.color || '-'}</div>
               ${zone
@@ -3153,7 +3188,10 @@
           html += '<div style="font-weight:900; font-size:12px; color:var(--primary); margin:10px 0 4px; padding-top:6px; border-top:1px solid var(--border);">Piso ' + r.floor + '</div>';
         }
         const dispName = (r.name && r.name !== r.code) ? r.name : 'Prenda sin nombre';
-        const shortC = (r.code && r.code.length > 16) ? r.code.slice(0, 6) + '\u2026' + r.code.slice(-4) : (r.code || '');
+        const shortC = (() => {
+          const c = prettyCode(r.code);
+          return (c && c.length > 16) ? c.slice(0, 6) + '\u2026' + c.slice(-4) : (c || '');
+        })();
         html += '<div class="sheet-prod-item" style="padding:6px 0;"><div class="info"><strong>' + (idx + 1) + '. ' + escapeHtml(dispName) + '</strong><span>' + escapeHtml(shortC) + ' - ' + escapeHtml(r.zone_name) + (r.shelf_position ? ' - ' + escapeHtml(r.shelf_position) : '') + '</span></div><button class="btn-reassign" onclick="removeFromRoute(\'' + r.code + '\')" style="margin-left:8px;">✕</button></div>';
       });
       list.innerHTML = html;
