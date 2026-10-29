@@ -1390,7 +1390,15 @@
       }
     });
 
+    let lastToggleTime = 0;
     function toggleScannerCamera() {
+      const now = Date.now();
+      // Doble toque: cambiar de lado (cámara frontal <-> trasera)
+      if (now - lastToggleTime < 300) {
+        switchCamera();
+        return;
+      }
+      lastToggleTime = now;
       if (isCameraRunning) {
         stopScannerCamera();
       } else {
