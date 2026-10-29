@@ -198,23 +198,74 @@
     }
     .scan-input-group input:focus { border-color: var(--primary); }
 
-    #cameraContainer {
+    /* MARCO DE CÁMARA: SIEMPRE VISIBLE (el botón y el flash quedan adentro) */
+    #cameraFrame {
+      position: relative;
       width: 100%;
-      max-height: 220px;
+      height: 230px;
       border-radius: 12px;
       overflow: hidden;
       margin-top: 10px;
-      display: none;
       background: #000;
       border: 2px solid var(--primary);
-      position: relative;
+    }
+    #cameraContainer {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
     }
     #cameraContainer video {
       width: 100% !important;
-      height: auto !important;
-      max-height: 220px !important;
+      height: 100% !important;
+      max-height: none !important;
       object-fit: cover !important;
       display: block;
+    }
+    /* La librería dibuja un recuadro de escaneo; lo ocultamos (el usuario no lo quiere) */
+    #cameraContainer #qr-shaded-region,
+    #cameraContainer .qr-shaded-region { display: none !important; }
+
+    /* Controles DENTRO del marco (flash, zoom, cambiar cámara) */
+    #cameraExtraControls {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      left: 8px;
+      display: none;
+      gap: 6px;
+      z-index: 6;
+      flex-direction: row;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      pointer-events: none;
+    }
+    #cameraExtraControls .btn {
+      width: auto;
+      padding: 7px 11px;
+      font-size: 12px;
+      font-weight: 800;
+      border-radius: 9px;
+      background: rgba(255,255,255,0.94);
+      color: #0f172a;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+      pointer-events: auto;
+    }
+    #cameraExtraControls .btn.on {
+      background: #f59e0b;
+      color: #fff;
+    }
+
+    /* Botón activar/detener: DENTRO del marco, anclado abajo */
+    #btnCamToggle {
+      position: absolute;
+      bottom: 8px;
+      left: 8px;
+      right: 8px;
+      z-index: 7;
+      margin: 0;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.4);
     }
 
     /* RESULT CARD: BIG WHERE-DOES-IT-GO DISPLAY */
@@ -751,17 +802,16 @@
             Apunta con la cámara o ingresa el código para saber a qué mueble devolverlo.
           </div>
 
-          <div id="cameraContainer">
-            <div id="cameraExtraControls" style="display: none; position: absolute; top: 50%; left: 8px; right: 8px; transform: translateY(-50%); gap: 8px; z-index: 5;">
-              <button class="btn btn-secondary btn-block" id="btnTorch" onclick="toggleTorch()">🔦 Linterna</button>
-              <button class="btn btn-secondary btn-block" id="btnZoom" onclick="toggleZoom()">🔍 Zoom 2x</button>
-              <button class="btn btn-secondary btn-block" id="btnSwitchCam" onclick="switchCamera()">🔄 Cambiar cámara</button>
+          <div id="cameraFrame">
+            <div id="cameraContainer"></div>
+            <div id="cameraExtraControls">
+              <button class="btn" id="btnTorch" onclick="toggleTorch()">🔦 Flash</button>
+              <button class="btn" id="btnZoom" onclick="toggleZoom()">🔍 1x</button>
+              <button class="btn" id="btnSwitchCam" onclick="switchCamera()">🔄</button>
             </div>
-            <div style="position: absolute; bottom: 8px; left: 8px; right: 8px; z-index: 6;">
-              <button class="btn btn-success btn-block" id="btnCamToggle" onclick="toggleScannerCamera()">
-                📷 Activar Cámara
-              </button>
-            </div>
+            <button class="btn btn-success btn-block" id="btnCamToggle" onclick="toggleScannerCamera()">
+              📷 Activar Cámara
+            </button>
           </div>
 
           <div class="scan-input-group">
@@ -1219,6 +1269,8 @@
     let isCameraRunning = false;
     let lastScannedCode = null;
     let lastScannedProductId = null;
+    let lastScanKey = null;
+    let lastScanAt = 0;
     let torchOn = false;
     let zoomOn = false;
     let availableCameras = [];
@@ -1389,26 +1441,33 @@
       }
     });
 
-    let lastToggleTime = 0;
+    let scanCamTapTimer = null;
     function toggleScannerCamera() {
-      const now = Date.now();
-      // Doble toque: cambiar de lado (cámara frontal <-> trasera)
-      if (now - lastToggleTime < 500) {
-        switchCamera();
+      // Un toque: encender/apagar. Dos toques rápidos: cambiar de cámara.
+      // Para distinguirlos, el toque simple espera 320ms antes de ejecutarse.
+      if (scanCamTapTimer) {
+        clearTimeout(scanCamTapTimer);
+        scanCamTapTimer = null;
+        if (isCameraRunning) {
+          switchCamera();
+        } else {
+          startScannerCamera();
+        }
         return;
       }
-      lastToggleTime = now;
-      if (isCameraRunning) {
-        stopScannerCamera();
-      } else {
-        startScannerCamera();
-      }
+      scanCamTapTimer = setTimeout(() => {
+        scanCamTapTimer = null;
+        if (isCameraRunning) {
+          stopScannerCamera();
+        } else {
+          startScannerCamera();
+        }
+      }, 320);
     }
 
     async function startScannerCamera() {
-      const box = document.getElementById("cameraContainer");
       const btn = document.getElementById("btnCamToggle");
-      box.style.display = "block";
+      if (isCameraRunning) return;
       btn.textContent = "⏳ Iniciando cámara...";
 
       try {
@@ -1481,8 +1540,8 @@
         zoomOn = false;
         const btnTorch = document.getElementById("btnTorch");
         const btnZoom = document.getElementById("btnZoom");
-        if (btnTorch) { btnTorch.textContent = "🔦 Linterna"; btnTorch.style.display = ""; }
-        if (btnZoom) { btnZoom.textContent = "🔍 Zoom 2x"; btnZoom.style.display = ""; }
+        if (btnTorch) { btnTorch.textContent = "🔦 Flash"; btnTorch.style.display = ""; btnTorch.classList.remove("on"); }
+        if (btnZoom) { btnZoom.textContent = "🔍 1x"; btnZoom.style.display = ""; btnZoom.classList.remove("on"); }
         // Enumerar cámaras y auto-cambiar si se abrió la frontal
         (async () => {
           try {
@@ -1525,20 +1584,14 @@
           try {
             await html5QrScanner.applyVideoConstraints({ width: { ideal: 1280 }, height: { ideal: 720 }, advanced: [{ focusMode: "continuous" }] });
           } catch (e) { console.warn("enhance failed", e); }
-          try {
-            const caps = (typeof html5QrScanner.getRunningTrackCapabilities === "function") ? html5QrScanner.getRunningTrackCapabilities() : null;
-            if (!caps || !caps.torch) {
-              if (btnTorch) btnTorch.style.display = "none";
-            }
-          } catch (e) {
-            if (btnTorch) btnTorch.style.display = "none";
-          }
         })();
       } catch (e) {
         console.error(e);
-        box.style.display = "none";
+        isCameraRunning = false;
         btn.textContent = "📷 Activar Cámara";
         btn.classList.replace("btn-secondary", "btn-success");
+        const extra = document.getElementById("cameraExtraControls");
+        if (extra) extra.style.display = "none";
         alert("No se pudo acceder a la cámara. Asegúrate de dar permisos o escribe el código manualmente.");
       }
     }
@@ -1549,7 +1602,6 @@
         html5QrScanner.stop().then(() => html5QrScanner.clear()).catch(() => {});
       }
       isCameraRunning = false;
-      document.getElementById("cameraContainer").style.display = "none";
       const btn = document.getElementById("btnCamToggle");
       btn.textContent = "📷 Activar Cámara";
       btn.classList.replace("btn-secondary", "btn-success");
@@ -1561,20 +1613,31 @@
 
     async function toggleTorch() {
       if (!html5QrScanner || !isCameraRunning) return;
-      torchOn = !torchOn;
+      const btn = document.getElementById("btnTorch");
+      const next = !torchOn;
+      let ok = false;
       try {
-        await html5QrScanner.applyVideoConstraints({ advanced: [{ torch: torchOn }] });
+        await html5QrScanner.applyVideoConstraints({ advanced: [{ torch: next }] });
+        ok = true;
       } catch (e) {
-        // Fallback: try direct track
         try {
           const track = html5QrScanner.getRunningTrack ? html5QrScanner.getRunningTrack() : null;
           if (track && track.applyConstraints) {
-            await track.applyConstraints({ advanced: [{ torch: torchOn }] });
+            await track.applyConstraints({ advanced: [{ torch: next }] });
+            ok = true;
           }
         } catch (e2) {}
       }
-      const btn = document.getElementById("btnTorch");
-      if (btn) btn.textContent = torchOn ? "🔦 Linterna ON" : "🔦 Linterna";
+      if (ok) {
+        torchOn = next;
+        if (btn) {
+          btn.textContent = torchOn ? "🔦 Flash ON" : "🔦 Flash";
+          btn.classList.toggle("on", torchOn);
+        }
+      } else if (btn) {
+        btn.textContent = "🔦 Sin flash";
+        setTimeout(() => { btn.textContent = torchOn ? "🔦 Flash ON" : "🔦 Flash"; }, 1500);
+      }
     }
 
     async function toggleZoom() {
@@ -1592,7 +1655,10 @@
         } catch (e2) {}
       }
       const btn = document.getElementById("btnZoom");
-      if (btn) btn.textContent = zoomOn ? "🔍 Zoom 1x" : "🔍 Zoom 2x";
+      if (btn) {
+        btn.textContent = zoomOn ? "🔍 2x" : "🔍 1x";
+        btn.classList.toggle("on", zoomOn);
+      }
     }
 
     async function switchCamera() {
@@ -1604,7 +1670,7 @@
           }
         } catch (e) { console.warn("getCameras failed", e); availableCameras = []; }
       }
-      if (!availableCameras.length) return;
+      if (availableCameras.length < 2) return;
       currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
       const cam = availableCameras[currentCameraIndex];
       if (!cam) return;
@@ -1680,14 +1746,12 @@
 
       // Dedupe por producto: una etiqueta con varios códigos debe leerse como UN solo producto.
       // Si ya procesamos este producto (cualquier código suyo), ignorar escaneos repetidos.
-      if (found) {
-        const pKey = found.id;
-        if (pKey === lastScannedProductId) return;
-        lastScannedProductId = pKey;
-        // Resetear dedupe tras 2s para poder re-escánear el mismo producto más tarde
-        clearTimeout(window._scanDedupeTimer);
-        window._scanDedupeTimer = setTimeout(() => { lastScannedProductId = null; }, 2000);
-      }
+      const scanKey = found ? ("p:" + found.id) : ("c:" + norm);
+      const nowScan = Date.now();
+      if (scanKey === lastScanKey && (nowScan - lastScanAt) < 1500) return;
+      lastScanKey = scanKey;
+      lastScanAt = nowScan;
+      lastScannedProductId = found ? found.id : null;
 
       if (found) {
         currentlyScannedItem = found;
