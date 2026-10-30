@@ -1275,6 +1275,7 @@
     let zoomOn = false;
     let availableCameras = [];
     let currentCameraIndex = 0;
+    let cameraBusy = false;
 
     // ================= INICIALIZACIÓN =================
     window.addEventListener("DOMContentLoaded", () => {
@@ -1290,12 +1291,20 @@
       // Auto-sincronización periódica cada 20 segundos
       setInterval(syncServerData, 20000);
 
+      // Al volver a la app (después de bloquear el teléfono) refrescar catálogo
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) syncServerData();
+      });
+
       setupMapGestures();
       setupModalMapPanZoom("zoneSelectionGrid");
       setupModalMapPanZoom("czZoneGrid");
     });
 
     // ================= LOCAL STORAGE =================
+    let usingDefaultZones = false;
+    let usingDefaultProducts = false;
+
     function loadFromLocalStorage() {
       try {
         zones = JSON.parse(localStorage.getItem(LS_ZONES) || "[]");
@@ -1304,8 +1313,8 @@
         zones = [];
         products = [];
       }
-      if (!zones.length) zones = getDefaultZones();
-      if (!products.length) products = getDefaultProducts();
+      if (!zones.length) { zones = getDefaultZones(); usingDefaultZones = true; }
+      if (!products.length) { products = getDefaultProducts(); usingDefaultProducts = true; }
     }
 
     function saveToLocalStorage() {
@@ -1340,50 +1349,100 @@
     }
 
     // ================= SERVIDOR & SINCRONIZACIÓN =================
+    async function fetchJSON(url, timeoutMs) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs || 8000);
+      try {
+        const res = await fetch(url, { cache: "no-store", signal: controller.signal });
+        if (!res || !res.ok) return null;
+        return await res.json();
+      } catch (e) {
+        return null;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
     async function syncServerData() {
       const pill = document.getElementById("statusPill");
       const text = document.getElementById("statusText");
 
+      let zonesOk = false;
+      let prodsOk = false;
+
+      // Zonas y productos se piden por separado: si una llamada falla o tarda,
+      // la otra igual se actualiza (antes se exigía que ambas respondieran).
       try {
-        const [resZ, resP] = await Promise.all([
-          fetch(`${SERVER_URL}/api/zones`, { cache: "no-store" }).catch(() => null),
-          fetch(`${SERVER_URL}/api/products`, { cache: "no-store" }).catch(() => null)
-        ]);
-
-        if (resZ && resZ.ok && resP && resP.ok) {
-          const srvZones = await resZ.json();
-          const srvProds = await resP.json();
-
-          if (Array.isArray(srvZones) && srvZones.length > 0) {
-            const mergedZones = [...zones]; // keep local (edited positions)
-            srvZones.forEach(sz => {
-              const idx = mergedZones.findIndex(z => z.id === sz.id);
-              if (idx === -1) mergedZones.push(sz); // add new server zones
-              // else keep local version (don't overwrite user edits)
-            });
-            zones = mergedZones;
-          }
-          if (Array.isArray(srvProds)) {
-            const mergedProds = [...srvProds];
-            products.forEach(p => {
-              const c = (p.code || "").toUpperCase();
-              if (!srvProds.some(sp => (sp.code || "").toUpperCase() === c)) mergedProds.push(p);
-            });
-            products = mergedProds;
-            if (!products || products.length === 0) products = getDefaultProducts();
-            if (!products || products.length === 0) products = getDefaultProducts();
-          }
-
-          saveToLocalStorage();
-          renderMap();
-          renderProductsList(products);
-
-          pill.className = "server-status online";
-          text.textContent = "En línea (Sincronizado)";
-          return;
+        const srvZones = await fetchJSON(`${SERVER_URL}/api/zones`, 8000);
+        if (Array.isArray(srvZones) && srvZones.length > 0) {
+          const mergedZones = usingDefaultZones ? [] : [...zones]; // local manda (posiciones editadas)
+          srvZones.forEach(sz => {
+            if (!mergedZones.some(z => z.id === sz.id)) mergedZones.push(sz);
+          });
+          zones = mergedZones;
+          usingDefaultZones = false;
+          zonesOk = true;
         }
       } catch (err) {
-        console.warn("Fallo de sincronización con servidor:", err);
+        console.warn("Sync zonas falló:", err);
+      }
+
+      try {
+        const srvProds = await fetchJSON(`${SERVER_URL}/api/products`, 8000);
+        if (Array.isArray(srvProds)) {
+          // Local manda: nunca pisamos un producto creado/editado en este equipo.
+          // En una instalación nueva (catálogo de ejemplo) gana el servidor.
+          const mergedProds = usingDefaultProducts ? [] : [...products];
+          srvProds.forEach(sp => {
+            const key = normalizeCode(sp.code);
+            const idx = mergedProds.findIndex(p => normalizeCode(p.code) === key);
+            if (idx === -1) {
+              // Evitar choque de ids entre un producto local y uno del servidor.
+              let prodToAdd = sp;
+              if (mergedProds.some(p => Number(p.id) === Number(sp.id))) {
+                const ids = mergedProds.map(p => Number(p.id)).filter(n => Number.isFinite(n));
+                prodToAdd = Object.assign({}, sp, { id: ids.length ? Math.max(...ids) + 1 : 1 });
+              }
+              mergedProds.push(prodToAdd);
+              return;
+            }
+            // Mismo producto: conservar el local y unir los códigos que falten.
+            const local = mergedProds[idx];
+            const codes = Array.isArray(local.codes) ? local.codes.slice() : (local.code ? [local.code] : []);
+            const srvCodes = Array.isArray(sp.codes) ? sp.codes : (sp.code ? [sp.code] : []);
+            srvCodes.forEach(c => {
+              if (c && !codes.some(x => normalizeCode(x) === normalizeCode(c))) codes.push(c);
+            });
+            local.codes = codes;
+            // Si el local no tiene mueble asignado, aprovechar el del servidor.
+            if (!local.zone_id && sp.zone_id) {
+              local.zone_id = sp.zone_id;
+              local.shelf_position = sp.shelf_position;
+              local.meter_position = sp.meter_position;
+              local.side = sp.side;
+            }
+          });
+          products = mergedProds;
+          if (mergedProds.length > 0) usingDefaultProducts = false;
+          prodsOk = true;
+        }
+      } catch (err) {
+        console.warn("Sync productos falló:", err);
+      }
+
+      if (!products || products.length === 0) products = getDefaultProducts();
+
+      if (zonesOk || prodsOk) {
+        saveToLocalStorage();
+        if (zonesOk) renderMap();
+        if (prodsOk) {
+          const searchEl = document.getElementById("searchInput");
+          if (searchEl && searchEl.value.trim()) handleSearch(searchEl.value);
+          else renderProductsList(products);
+        }
+        pill.className = "server-status online";
+        text.textContent = "En línea (Sincronizado)";
+        return;
       }
 
       pill.className = "server-status offline";
@@ -1412,6 +1471,18 @@
         document.getElementById("tabScan").classList.add("active");
         document.getElementById("screenTitle").textContent = "👕 Devolver Ropa";
         document.getElementById("btnToggleEdit").style.display = "none";
+        // Si la cámara quedó negra por volver de otra pestaña, recuperar el preview.
+        if (isCameraRunning && !cameraBusy) {
+          kickCameraPreview();
+          setTimeout(() => {
+            if (isCameraRunning && !cameraBusy && !cameraPreviewReady()) {
+              cameraBusy = true;
+              restartCameraStream()
+                .catch(() => {})
+                .finally(() => { cameraBusy = false; });
+            }
+          }, 400);
+        }
       } else if (tab === "map") {
         mainEl.classList.add("map-active");
         document.getElementById("viewMap").classList.add("active");
@@ -1426,6 +1497,7 @@
         document.getElementById("screenTitle").textContent = "🔍 Catálogo de Prendas";
         document.getElementById("btnToggleEdit").style.display = "none";
         renderProductsList(products);
+        syncServerData();
       }
     }
 
@@ -1442,9 +1514,23 @@
     });
 
     let scanCamTapTimer = null;
+    let scanCamWaitTimer = null;
     function toggleScannerCamera() {
       // Un toque: encender/apagar. Dos toques rápidos: cambiar de cámara.
       // Para distinguirlos, el toque simple espera 320ms antes de ejecutarse.
+      if (cameraBusy) {
+        // Si la cámara está arrancando/deteniéndose, esperar y reintentar:
+        // así un toque durante ese momento no se pierde.
+        if (scanCamWaitTimer) return;
+        const deadline = Date.now() + 6000;
+        const retry = () => {
+          scanCamWaitTimer = null;
+          if (!cameraBusy) { toggleScannerCamera(); return; }
+          if (Date.now() < deadline) scanCamWaitTimer = setTimeout(retry, 200);
+        };
+        scanCamWaitTimer = setTimeout(retry, 200);
+        return;
+      }
       if (scanCamTapTimer) {
         clearTimeout(scanCamTapTimer);
         scanCamTapTimer = null;
@@ -1465,76 +1551,112 @@
       }, 320);
     }
 
+    // ---- Helpers de preview de cámara (recuperación de pantalla negra) ----
+    function cameraPreviewEl() {
+      return document.querySelector("#cameraContainer video");
+    }
+    function cameraPreviewReady() {
+      const v = cameraPreviewEl();
+      return !!(v && v.videoWidth > 0 && v.readyState >= 1);
+    }
+    function kickCameraPreview() {
+      const v = cameraPreviewEl();
+      if (!v) return;
+      try {
+        v.setAttribute("playsinline", "true");
+        v.setAttribute("webkit-playsinline", "true");
+        v.muted = true;
+        v.autoplay = true;
+        const p = v.play();
+        if (p && typeof p.catch === "function") p.catch(() => {});
+      } catch (e) {}
+    }
+    function cameraConfigFor(cam, facing) {
+      let videoConstraints;
+      if (cam && cam.id) {
+        videoConstraints = { deviceId: { exact: cam.id }, width: { ideal: 1280 }, height: { ideal: 720 } };
+      } else if (facing === "ideal") {
+        videoConstraints = { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } };
+      } else {
+        videoConstraints = { facingMode: { exact: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } };
+      }
+      return {
+        fps: 20,
+        videoConstraints,
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+      };
+    }
+    async function launchScanner(cam, facing) {
+      html5QrScanner = new Html5Qrcode("cameraContainer");
+      await html5QrScanner.start(
+        (cam && cam.id) ? cam.id : { facingMode: "environment" },
+        cameraConfigFor(cam, facing),
+        (decoded) => { handleCameraScan(decoded); },
+        () => {}
+      );
+      kickCameraPreview();
+    }
+    async function waitForCameraPreview(timeoutMs) {
+      const until = Date.now() + (timeoutMs || 3500);
+      while (Date.now() < until) {
+        if (!isCameraRunning) return false;
+        if (cameraPreviewReady()) return true;
+        kickCameraPreview();
+        await new Promise(r => setTimeout(r, 250));
+      }
+      return cameraPreviewReady();
+    }
+    async function restartCameraStream() {
+      try { await html5QrScanner.stop(); } catch (e) {}
+      try { html5QrScanner.clear(); } catch (e) {}
+      const cam = availableCameras[currentCameraIndex] || null;
+      try {
+        await launchScanner(cam, "ideal");
+      } catch (e) {
+        console.warn("restart with selected camera failed, using default", e);
+        try { html5QrScanner.clear(); } catch (e2) {}
+        await launchScanner(null, "ideal");
+      }
+      kickCameraPreview();
+    }
+
     async function startScannerCamera() {
       const btn = document.getElementById("btnCamToggle");
-      if (isCameraRunning) return;
+      const extra = document.getElementById("cameraExtraControls");
+      if (isCameraRunning || cameraBusy) return;
+      cameraBusy = true;
       btn.textContent = "⏳ Iniciando cámara...";
 
       try {
-        // Ruta rápida: iniciar con la config más simple (sin enumerar cámaras ni constraints pesadas).
-        // La enumeración de cámaras (getCameras) es lenta y bloquea; solo se usa como fallback.
-        let started = false;
-        const fastCfgs = [
-          { fps: 20, experimentalFeatures: { useBarCodeDetectorIfSupported: true } },
-          { fps: 20, videoConstraints: { facingMode: "environment" }, experimentalFeatures: { useBarCodeDetectorIfSupported: true } }
-        ];
-        for (const cfg of fastCfgs) {
-          try {
-            html5QrScanner = new Html5Qrcode("cameraContainer");
-            await html5QrScanner.start(
-              { facingMode: "environment" },
-              cfg,
-              (decoded) => {
-                handleCameraScan(decoded);
-              },
-              () => {}
-            );
-            started = true;
-            break;
-          } catch (e) {
-            console.warn("camera start failed (fast) with", cfg, e);
-            try { if (html5QrScanner) html5QrScanner.clear(); } catch (e2) {}
-            html5QrScanner = null;
-          }
+        // Una sola petición de cámara: trasera y con resolución desde el inicio.
+        // No se renegocian constraints después de iniciar: eso dejaba el preview negro en algunos Android.
+        try {
+          await launchScanner(null, "exact");
+        } catch (e) {
+          console.warn("Cámara trasera exacta falló, reintentando...", e);
+          try { html5QrScanner.clear(); } catch (e2) {}
+          await launchScanner(null, "ideal");
         }
-        // Fallback: enumerar cámaras y elegir la trasera (más lento, solo si lo anterior falla)
-        if (!started) {
-          let backCameraId = null;
-          try {
-            if (typeof Html5Qrcode.getCameras === "function") {
-              const cams = await Html5Qrcode.getCameras();
-              if (Array.isArray(cams) && cams.length) {
-                const back = cams.find(c => /back|rear|environment|trasera/i.test(c.label || ""));
-                if (back) backCameraId = back.id;
-                else if (cams.length > 1) backCameraId = cams[cams.length - 1].id;
-                else backCameraId = cams[0].id;
-              }
-            }
-          } catch (e) { console.warn("getCameras failed", e); }
-          if (backCameraId) {
-            try {
-              html5QrScanner = new Html5Qrcode("cameraContainer");
-              await html5QrScanner.start(
-                backCameraId,
-                { fps: 20, experimentalFeatures: { useBarCodeDetectorIfSupported: true } },
-                (decoded) => {
-                  handleCameraScan(decoded);
-                },
-                () => {}
-              );
-              started = true;
-            } catch (e) {
-              console.warn("back camera start failed", e);
-              try { if (html5QrScanner) html5QrScanner.clear(); } catch (e2) {}
-              html5QrScanner = null;
-            }
-          }
-        }
-        if (!started) throw new Error("No se pudo iniciar la camara");
         isCameraRunning = true;
+
+        // Esperar el primer frame; si queda negro, reiniciar el stream automáticamente.
+        let ok = await waitForCameraPreview(3500);
+        if (!ok && isCameraRunning) {
+          console.warn("Preview negro: reiniciando cámara");
+          try {
+            await restartCameraStream();
+            await waitForCameraPreview(3000);
+          } catch (e) {
+            console.warn("restart failed", e);
+            isCameraRunning = false;
+            btn.textContent = "📷 Activar Cámara";
+            btn.classList.replace("btn-secondary", "btn-success");
+            if (extra) extra.style.display = "none";
+            return;
+          }
+        }
         btn.textContent = "🛑 Detener Cámara";
         btn.classList.replace("btn-success", "btn-secondary");
-        const extra = document.getElementById("cameraExtraControls");
         if (extra) extra.style.display = "flex";
         torchOn = false;
         zoomOn = false;
@@ -1542,65 +1664,42 @@
         const btnZoom = document.getElementById("btnZoom");
         if (btnTorch) { btnTorch.textContent = "🔦 Flash"; btnTorch.style.display = ""; btnTorch.classList.remove("on"); }
         if (btnZoom) { btnZoom.textContent = "🔍 1x"; btnZoom.style.display = ""; btnZoom.classList.remove("on"); }
-        // Enumerar cámaras y auto-cambiar si se abrió la frontal
+
+        // Cámaras disponibles + índice real (deviceId del track, NO track.id)
         (async () => {
           try {
-            if (typeof Html5Qrcode.getCameras === "function") {
-              const cams = await Html5Qrcode.getCameras();
-              if (Array.isArray(cams) && cams.length) {
-                availableCameras = cams;
-                let isFront = false;
-                try {
-                  const track = (typeof html5QrScanner.getRunningTrack === "function") ? html5QrScanner.getRunningTrack() : null;
-                  const label = (track && track.label) ? track.label.toLowerCase() : "";
-                  if (/front|selfie|user|frontal/i.test(label)) isFront = true;
-                } catch (e) {}
-                if (isFront && cams.length > 1) {
-                  const back = cams.find(c => /back|rear|environment|trasera/i.test(c.label || ""));
-                  const target = back ? back : cams[cams.length - 1];
-                  if (target && target.id) {
-                    try {
-                      await html5QrScanner.stop();
-                      html5QrScanner = new Html5Qrcode("cameraContainer");
-                      await html5QrScanner.start(target.id, { fps: 20, experimentalFeatures: { useBarCodeDetectorIfSupported: true } }, (decoded) => {
-                        handleCameraScan(decoded);
-                      }, () => {});
-                      currentCameraIndex = cams.indexOf(target);
-                    } catch (e) { console.warn("auto-switch failed", e); }
-                  }
-                } else {
-                  try {
-                    const track = (typeof html5QrScanner.getRunningTrack === "function") ? html5QrScanner.getRunningTrack() : null;
-                    const idx = cams.findIndex(c => track && c.id === track.id);
-                    if (idx >= 0) currentCameraIndex = idx;
-                  } catch (e) {}
-                }
-              }
-            }
+            if (typeof Html5Qrcode.getCameras !== "function") return;
+            const cams = await Html5Qrcode.getCameras();
+            if (!Array.isArray(cams) || !cams.length) return;
+            availableCameras = cams;
+            let deviceId = null;
+            try {
+              const track = (typeof html5QrScanner.getRunningTrack === "function") ? html5QrScanner.getRunningTrack() : null;
+              const settings = (track && typeof track.getSettings === "function") ? track.getSettings() : null;
+              deviceId = settings && settings.deviceId ? settings.deviceId : null;
+            } catch (e) {}
+            const idx = deviceId ? cams.findIndex(c => c.id === deviceId) : -1;
+            currentCameraIndex = idx >= 0 ? idx : 0;
           } catch (e) { console.warn("enumerate failed", e); }
-        })();
-        // Mejoras de precisión en segundo plano (no bloquean el inicio)
-        (async () => {
-          try {
-            await html5QrScanner.applyVideoConstraints({ width: { ideal: 1280 }, height: { ideal: 720 }, advanced: [{ focusMode: "continuous" }] });
-          } catch (e) { console.warn("enhance failed", e); }
         })();
       } catch (e) {
         console.error(e);
         isCameraRunning = false;
         btn.textContent = "📷 Activar Cámara";
         btn.classList.replace("btn-secondary", "btn-success");
-        const extra = document.getElementById("cameraExtraControls");
         if (extra) extra.style.display = "none";
         alert("No se pudo acceder a la cámara. Asegúrate de dar permisos o escribe el código manualmente.");
+      } finally {
+        cameraBusy = false;
       }
     }
 
 
-    function stopScannerCamera() {
-      if (html5QrScanner && isCameraRunning) {
-        html5QrScanner.stop().then(() => html5QrScanner.clear()).catch(() => {});
-      }
+    async function stopScannerCamera() {
+      if (cameraBusy) return;
+      cameraBusy = true;
+      const scanner = html5QrScanner;
+      html5QrScanner = null;
       isCameraRunning = false;
       const btn = document.getElementById("btnCamToggle");
       btn.textContent = "📷 Activar Cámara";
@@ -1609,6 +1708,14 @@
       if (extra) extra.style.display = "none";
       torchOn = false;
       zoomOn = false;
+      try {
+        if (scanner) {
+          try { await scanner.stop(); } catch (e) {}
+          try { scanner.clear(); } catch (e) {}
+        }
+      } finally {
+        cameraBusy = false;
+      }
     }
 
     async function toggleTorch() {
@@ -1662,7 +1769,7 @@
     }
 
     async function switchCamera() {
-      if (!html5QrScanner || !isCameraRunning) return;
+      if (!html5QrScanner || !isCameraRunning || cameraBusy) return;
       if (!availableCameras.length) {
         try {
           if (typeof Html5Qrcode.getCameras === "function") {
@@ -1671,17 +1778,29 @@
         } catch (e) { console.warn("getCameras failed", e); availableCameras = []; }
       }
       if (availableCameras.length < 2) return;
-      currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
+      cameraBusy = true;
+      const btn = document.getElementById("btnCamToggle");
+      const prevLabel = btn.textContent;
+      btn.textContent = "🔄 Cambiando cámara...";
+      currentCameraIndex = (Math.max(0, currentCameraIndex) + 1) % availableCameras.length;
       const cam = availableCameras[currentCameraIndex];
-      if (!cam) return;
+      if (!cam) { btn.textContent = prevLabel; cameraBusy = false; return; }
       try {
-        await html5QrScanner.stop();
-        html5QrScanner = new Html5Qrcode("cameraContainer");
-        await html5QrScanner.start(cam.id, { fps: 20, experimentalFeatures: { useBarCodeDetectorIfSupported: true } }, (decoded) => {
-          handleCameraScan(decoded);
-        }, () => {});
+        try { await html5QrScanner.stop(); } catch (e) {}
+        try { html5QrScanner.clear(); } catch (e) {}
+        await launchScanner(cam);
+        kickCameraPreview();
+        await waitForCameraPreview(2500);
       } catch (e) {
         console.warn("switch camera failed", e);
+        // Si la cámara elegida falla, volver a la trasera por defecto.
+        try {
+          await launchScanner(null, "ideal");
+          kickCameraPreview();
+        } catch (e2) { console.warn("fallback camera failed", e2); }
+      } finally {
+        cameraBusy = false;
+        btn.textContent = isCameraRunning ? "🛑 Detener Cámara" : "📷 Activar Cámara";
       }
     }
 
@@ -1724,7 +1843,7 @@
     }
 
     function handleCameraScan(decoded) {
-      document.getElementById("manualCodeInput").value = decoded;
+      document.getElementById("manualCodeInput").value = prettyCode(decoded);
       lastScannedCode = decoded.trim().toUpperCase();
       processScannedCode(decoded);
     }
@@ -2924,12 +3043,25 @@
       const idVal = document.getElementById("formProdId").value;
       const isNew = !idVal;
       const code = document.getElementById("formProdCode").value.trim().toUpperCase();
-      const id = isNew ? (products.length ? Math.max(...products.map(p => p.id)) + 1 : 1) : parseInt(idVal);
+      const numericIds = products.map(p => Number(p.id)).filter(n => Number.isFinite(n));
+      const id = isNew ? (numericIds.length ? Math.max(...numericIds) + 1 : 1) : parseInt(idVal);
 
       const meter = parseInt(document.getElementById("formProdMeter").value) || null;
       const side = document.getElementById("formProdSide").value || null;
       const zone = zones.find(z => z.id === selectedModalZoneId);
       const isFloorstand = !!(zone && zone.type === "floorstand");
+
+      // Conservar todos los códigos conocidos: si el código principal cambió,
+      // el anterior queda como código alternativo (una prenda puede tener varias etiquetas).
+      const prevProd = isNew ? null : products.find(p => Number(p.id) === Number(id));
+      const extraCodes = (pendingExtraCodes || []).slice();
+      if (prevProd && prevProd.code && normalizeCode(prevProd.code) !== normalizeCode(code)) {
+        extraCodes.push(prevProd.code);
+      }
+      const allCodes = [code];
+      extraCodes.forEach(c => {
+        if (c && !allCodes.some(x => normalizeCode(x) === normalizeCode(c))) allCodes.push(c);
+      });
 
       const prod = {
         id,
@@ -2942,7 +3074,7 @@
         zone_id: selectedModalZoneId || null,
         meter_position: meter,
         side: isFloorstand ? side : null,
-        codes: [code, ...pendingExtraCodes],
+        codes: allCodes,
         shelf_position: meter
           ? `Metro ${meter}` + (isFloorstand && side ? ` · ${side === "frente" ? "Frente" : "Trasero"}` : "")
           : (document.getElementById("formProdShelf").value.trim() || null),
@@ -2951,7 +3083,7 @@
       if (isNew) {
         products.push(prod);
       } else {
-        const idx = products.findIndex(p => p.id === id);
+        const idx = products.findIndex(p => Number(p.id) === Number(id));
         if (idx !== -1) products[idx] = prod;
       }
 
@@ -2960,8 +3092,9 @@
       renderMap();
       closeProductModal();
 
-      await pushProductToServer(prod);
+      // Mostrar el resultado de inmediato (no esperar la red).
       processScannedCode(code);
+      pushProductToServer(prod);
     }
 
     // Modal: Cambiar Mueble Rápido
@@ -3067,8 +3200,9 @@
         renderRoute();
       }
 
-      await pushProductToServer(p);
+      // Mostrar el resultado de inmediato (no esperar la red)
       processScannedCode(p.code);
+      pushProductToServer(p);
 
       if (selectedZoneForEdit) {
         showZoneDetailSheet(selectedZoneForEdit);
@@ -3077,7 +3211,7 @@
 
     async function pushProductToServer(prod) {
       try {
-        const r = await fetch(`${SERVER_URL}/api/products/${prod.code}`, {
+        const r = await fetch(`${SERVER_URL}/api/products/${encodeURIComponent(prod.code || "")}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(prod)
