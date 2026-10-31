@@ -1276,6 +1276,10 @@
     let availableCameras = [];
     let currentCameraIndex = 0;
     let cameraBusy = false;
+    let fastScan = null;
+    let fastScanGen = 0;
+    let zoomLevel = 1;
+    let zoomMax = 0; // 0 = el navegador no reporta el rango de zoom
 
     // ================= INICIALIZACIÓN =================
     window.addEventListener("DOMContentLoaded", () => {
@@ -1461,6 +1465,8 @@
     function switchTab(tab) {
       activeTab = tab;
       const mainEl = document.getElementById("mainContainer");
+      // Fuera de la pestaña del escáner no hace falta decodificar: ahorra batería/CPU.
+      if (tab !== "scan") stopFastScan();
 
       document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
       document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
@@ -1474,6 +1480,8 @@
         // Si la cámara quedó negra por volver de otra pestaña, recuperar el preview.
         if (isCameraRunning && !cameraBusy) {
           kickCameraPreview();
+          // Reactivar la lectura rápida al volver a esta pestaña.
+          startFastScan().catch(() => {});
           setTimeout(() => {
             if (isCameraRunning && !cameraBusy && !cameraPreviewReady()) {
               cameraBusy = true;
@@ -1571,23 +1579,230 @@
         if (p && typeof p.catch === "function") p.catch(() => {});
       } catch (e) {}
     }
+    // ---- Escaneo rápido con el detector nativo a resolución real ----
+    // html5-qrcode decodifica el video reducido al tamaño del recuadro en pantalla
+    // (~360x230 px). Un código de barras queda con poquísimos píxeles y por eso solo
+    // se lee bien al hacer zoom 2x. Aquí además leemos el frame real del video
+    // (1280 px de ancho) con el detector nativo del teléfono: es mucho más rápido y
+    // preciso, y permite leer sin tocar el zoom.
+    const FAST_SCAN_FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "code_93", "itf", "codabar", "data_matrix", "qr_code", "pdf417", "aztec"];
+    const CAMERA_SCAN_FORMATS = ["QR_CODE", "DATA_MATRIX", "EAN_13", "EAN_8", "UPC_A", "UPC_E", "CODE_128", "CODE_39", "CODE_93", "ITF", "CODABAR", "PDF_417"];
+
+    function nativeScannerSupported() {
+      return typeof window.BarcodeDetector === "function";
+    }
+
+    function getVideoTrack() {
+      try {
+        const v = cameraPreviewEl();
+        const stream = v && v.srcObject;
+        if (stream && typeof stream.getVideoTracks === "function") {
+          return stream.getVideoTracks()[0] || null;
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    function getVideoCapabilities() {
+      const track = getVideoTrack();
+      try {
+        if (track && typeof track.getCapabilities === "function") return track.getCapabilities() || {};
+      } catch (e) {}
+      return {};
+    }
+
+    async function createNativeBarcodeDetector() {
+      if (!nativeScannerSupported()) return null;
+      let supported = [];
+      try {
+        if (typeof BarcodeDetector.getSupportedFormats === "function") {
+          supported = await BarcodeDetector.getSupportedFormats();
+        }
+      } catch (e) { supported = []; }
+      const formats = supported.length
+        ? FAST_SCAN_FORMATS.filter(f => supported.indexOf(f) !== -1)
+        : FAST_SCAN_FORMATS.slice();
+      if (!formats.length) return null;
+      try {
+        return new BarcodeDetector({ formats });
+      } catch (e) {
+        try { return new BarcodeDetector(); } catch (e2) { return null; }
+      }
+    }
+
+    function stopFastScan() {
+      // La generación evita que dos arranques simultáneos (p. ej. al volver de otra
+      // pestaña mientras arranca la cámara) dejen un bucle huérfano consumiendo CPU.
+      fastScanGen++;
+      if (!fastScan) return;
+      fastScan.stopped = true;
+      if (fastScan.rafId) {
+        try { cancelAnimationFrame(fastScan.rafId); } catch (e) {}
+      }
+      fastScan = null;
+    }
+
+    async function startFastScan() {
+      stopFastScan();
+      const gen = fastScanGen;
+      if (!isCameraRunning) return false;
+      const detector = await createNativeBarcodeDetector();
+      if (gen !== fastScanGen || !detector || !isCameraRunning) return false;
+
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return false;
+
+      const state = { stopped: false, rafId: 0, detector, canvas, ctx, lastRun: 0, cooldownUntil: 0, busy: false };
+      fastScan = state;
+
+      const MIN_INTERVAL_MS = 90;   // ~11 lecturas por segundo
+      const COOLDOWN_MS = 1200;     // evita repetir el mismo código en ráfaga
+
+      const loop = (ts) => {
+        if (state.stopped || gen !== fastScanGen) return;
+        state.rafId = requestAnimationFrame(loop);
+        if (state.busy || ts - state.lastRun < MIN_INTERVAL_MS || ts < state.cooldownUntil) return;
+        const video = cameraPreviewEl();
+        if (!video || !video.videoWidth || video.readyState < 2) return;
+        state.lastRun = ts;
+        state.busy = true;
+        try {
+          const vw = video.videoWidth;
+          const vh = video.videoHeight;
+          const scale = Math.min(1, 1280 / vw);
+          const cw = Math.max(1, Math.round(vw * scale));
+          const ch = Math.max(1, Math.round(vh * scale));
+          if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+          ctx.drawImage(video, 0, 0, cw, ch);
+        } catch (e) {
+          state.busy = false;
+          return;
+        }
+        state.detector.detect(canvas).then((results) => {
+          state.busy = false;
+          if (state.stopped || !isCameraRunning) return;
+          if (!results || !results.length) return;
+          // Si hay varios códigos en pantalla, usar el más grande (el que apunta el usuario).
+          let best = null;
+          for (const r of results) {
+            const bb = r.boundingBox || { width: 0, height: 0 };
+            const area = (bb.width || 0) * (bb.height || 0);
+            if (!best || area > best.area) best = { result: r, area };
+          }
+          const raw = best && best.result ? String(best.result.rawValue || "").trim() : "";
+          if (!raw) return;
+          state.cooldownUntil = performance.now() + COOLDOWN_MS;
+          handleCameraScan(raw);
+        }).catch(() => { state.busy = false; });
+      };
+
+      state.rafId = requestAnimationFrame(loop);
+      return true;
+    }
+
+    // ---- Zoom de la cámara ----
+    function zoomOptions() {
+      const opts = [1];
+      if (!zoomMax || zoomMax >= 1.8) opts.push(2);
+      if (!zoomMax || zoomMax >= 2.8) opts.push(3);
+      return opts;
+    }
+
+    async function applyCameraZoom(z) {
+      if (!html5QrScanner || !isCameraRunning) return false;
+      let target = z;
+      if (zoomMax && zoomMax > 1) target = Math.min(zoomMax, Math.max(1, z));
+      try {
+        await html5QrScanner.applyVideoConstraints({ zoom: target });
+        zoomLevel = target;
+        return true;
+      } catch (e) {
+        const track = getVideoTrack();
+        try {
+          if (track && typeof track.applyConstraints === "function") {
+            await track.applyConstraints({ zoom: target });
+            zoomLevel = target;
+            return true;
+          }
+        } catch (e2) {}
+      }
+      return false;
+    }
+
+    function updateZoomButton() {
+      const btn = document.getElementById("btnZoom");
+      if (!btn) return;
+      const label = Math.abs(zoomLevel - Math.round(zoomLevel)) < 0.05
+        ? String(Math.round(zoomLevel))
+        : zoomLevel.toFixed(1);
+      btn.textContent = "🔍 " + label + "x";
+      btn.classList.toggle("on", zoomLevel > 1.05);
+    }
+
+    async function setupCameraControls() {
+      const caps = getVideoCapabilities();
+      const zoomCap = caps && caps.zoom;
+      zoomMax = (zoomCap && typeof zoomCap.max === "number") ? zoomCap.max : 0;
+      const btnZoom = document.getElementById("btnZoom");
+      const btnTorch = document.getElementById("btnTorch");
+      if (btnTorch) {
+        btnTorch.textContent = torchOn ? "🔦 Flash ON" : "🔦 Flash";
+        btnTorch.classList.toggle("on", torchOn);
+      }
+      zoomLevel = 1;
+      if (btnZoom) {
+        // Arrancar ya en 2x: es donde el código se lee al instante en casi todos
+        // los teléfonos. Si el equipo no soporta zoom, el botón queda en 1x.
+        const target = (zoomMax && zoomMax > 1) ? Math.min(2, zoomMax) : 2;
+        const ok = await applyCameraZoom(target);
+        if (!ok) zoomLevel = 1;
+        btnZoom.style.display = (ok || zoomMax > 1) ? "" : "none";
+        updateZoomButton();
+        if (ok && zoomLevel > 1) setTimeout(kickCameraPreview, 50);
+      }
+    }
+
+    async function afterCameraStarted() {
+      if (!isCameraRunning) return;
+      startFastScan().catch(() => {});
+      try { await setupCameraControls(); } catch (e) { console.warn("camera controls failed", e); }
+    }
+
     function cameraConfigFor(cam, facing) {
       let videoConstraints;
+      const base = {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        // Enfoque continuo: sin esto el foco se queda fijo y el código se ve borroso.
+        focusMode: { ideal: "continuous" }
+      };
       if (cam && cam.id) {
-        videoConstraints = { deviceId: { exact: cam.id }, width: { ideal: 1280 }, height: { ideal: 720 } };
+        videoConstraints = Object.assign({ deviceId: { exact: cam.id } }, base);
       } else if (facing === "ideal") {
-        videoConstraints = { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } };
+        videoConstraints = Object.assign({ facingMode: { ideal: "environment" } }, base);
       } else {
-        videoConstraints = { facingMode: { exact: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } };
+        videoConstraints = Object.assign({ facingMode: { exact: "environment" } }, base);
       }
       return {
-        fps: 20,
+        // Con el detector nativo activo, el decodificador de la librería solo es
+        // respaldo: bajamos su ritmo para no competir por CPU con el escaneo rápido.
+        fps: nativeScannerSupported() ? 4 : 12,
         videoConstraints,
         experimentalFeatures: { useBarCodeDetectorIfSupported: true }
       };
     }
     async function launchScanner(cam, facing) {
-      html5QrScanner = new Html5Qrcode("cameraContainer");
+      // Limitar los formatos también acelera la decodificación.
+      const formats = (typeof Html5QrcodeSupportedFormats !== "undefined")
+        ? CAMERA_SCAN_FORMATS
+            .map(f => Html5QrcodeSupportedFormats[f])
+            .filter(f => f !== undefined)
+        : undefined;
+      html5QrScanner = new Html5Qrcode("cameraContainer", formats && formats.length ? {
+        formatsToSupport: formats,
+        useBarCodeDetectorIfSupported: true
+      } : undefined);
       await html5QrScanner.start(
         (cam && cam.id) ? cam.id : { facingMode: "environment" },
         cameraConfigFor(cam, facing),
@@ -1607,6 +1822,7 @@
       return cameraPreviewReady();
     }
     async function restartCameraStream() {
+      stopFastScan();
       try { await html5QrScanner.stop(); } catch (e) {}
       try { html5QrScanner.clear(); } catch (e) {}
       const cam = availableCameras[currentCameraIndex] || null;
@@ -1618,6 +1834,7 @@
         await launchScanner(null, "ideal");
       }
       kickCameraPreview();
+      await afterCameraStarted();
     }
 
     async function startScannerCamera() {
@@ -1664,6 +1881,8 @@
         const btnZoom = document.getElementById("btnZoom");
         if (btnTorch) { btnTorch.textContent = "🔦 Flash"; btnTorch.style.display = ""; btnTorch.classList.remove("on"); }
         if (btnZoom) { btnZoom.textContent = "🔍 1x"; btnZoom.style.display = ""; btnZoom.classList.remove("on"); }
+        // Arranca el escaneo rápido y deja el zoom en 2x automáticamente.
+        await afterCameraStarted();
 
         // Cámaras disponibles + índice real (deviceId del track, NO track.id)
         (async () => {
@@ -1674,7 +1893,7 @@
             availableCameras = cams;
             let deviceId = null;
             try {
-              const track = (typeof html5QrScanner.getRunningTrack === "function") ? html5QrScanner.getRunningTrack() : null;
+              const track = getVideoTrack();
               const settings = (track && typeof track.getSettings === "function") ? track.getSettings() : null;
               deviceId = settings && settings.deviceId ? settings.deviceId : null;
             } catch (e) {}
@@ -1698,6 +1917,7 @@
     async function stopScannerCamera() {
       if (cameraBusy) return;
       cameraBusy = true;
+      stopFastScan();
       const scanner = html5QrScanner;
       html5QrScanner = null;
       isCameraRunning = false;
@@ -1708,6 +1928,10 @@
       if (extra) extra.style.display = "none";
       torchOn = false;
       zoomOn = false;
+      zoomLevel = 1;
+      zoomMax = 0;
+      const btnZoom = document.getElementById("btnZoom");
+      if (btnZoom) { btnZoom.textContent = "🔍 1x"; btnZoom.classList.remove("on"); btnZoom.style.display = ""; }
       try {
         if (scanner) {
           try { await scanner.stop(); } catch (e) {}
@@ -1728,7 +1952,7 @@
         ok = true;
       } catch (e) {
         try {
-          const track = html5QrScanner.getRunningTrack ? html5QrScanner.getRunningTrack() : null;
+          const track = getVideoTrack();
           if (track && track.applyConstraints) {
             await track.applyConstraints({ advanced: [{ torch: next }] });
             ok = true;
@@ -1749,22 +1973,19 @@
 
     async function toggleZoom() {
       if (!html5QrScanner || !isCameraRunning) return;
-      zoomOn = !zoomOn;
-      const z = zoomOn ? 2 : 1;
-      try {
-        await html5QrScanner.applyVideoConstraints({ zoom: z });
-      } catch (e) {
-        try {
-          const track = html5QrScanner.getRunningTrack ? html5QrScanner.getRunningTrack() : null;
-          if (track && track.applyConstraints) {
-            await track.applyConstraints({ zoom: z });
-          }
-        } catch (e2) {}
+      const options = zoomOptions();
+      // Siguiente nivel: 1x -> 2x -> 3x -> 1x
+      let current = options[0];
+      for (const z of options) {
+        if (Math.abs(z - zoomLevel) < Math.abs(current - zoomLevel)) current = z;
       }
-      const btn = document.getElementById("btnZoom");
-      if (btn) {
-        btn.textContent = zoomOn ? "🔍 2x" : "🔍 1x";
-        btn.classList.toggle("on", zoomOn);
+      const idx = options.indexOf(current);
+      const next = options[(idx + 1) % options.length];
+      const ok = await applyCameraZoom(next);
+      if (ok) {
+        zoomOn = zoomLevel > 1.05;
+        updateZoomButton();
+        setTimeout(kickCameraPreview, 50);
       }
     }
 
@@ -1786,17 +2007,20 @@
       const cam = availableCameras[currentCameraIndex];
       if (!cam) { btn.textContent = prevLabel; cameraBusy = false; return; }
       try {
+        stopFastScan();
         try { await html5QrScanner.stop(); } catch (e) {}
         try { html5QrScanner.clear(); } catch (e) {}
         await launchScanner(cam);
         kickCameraPreview();
         await waitForCameraPreview(2500);
+        await afterCameraStarted();
       } catch (e) {
         console.warn("switch camera failed", e);
         // Si la cámara elegida falla, volver a la trasera por defecto.
         try {
           await launchScanner(null, "ideal");
           kickCameraPreview();
+          await afterCameraStarted();
         } catch (e2) { console.warn("fallback camera failed", e2); }
       } finally {
         cameraBusy = false;
@@ -1843,9 +2067,13 @@
     }
 
     function handleCameraScan(decoded) {
-      document.getElementById("manualCodeInput").value = prettyCode(decoded);
-      lastScannedCode = decoded.trim().toUpperCase();
-      processScannedCode(decoded);
+      const raw = String(decoded == null ? "" : decoded).trim();
+      if (!raw) return;
+      document.getElementById("manualCodeInput").value = prettyCode(raw);
+      lastScannedCode = raw.toUpperCase();
+      // Vibración corta: confirma al instante que la cámara ya leyó el código.
+      try { if (navigator.vibrate) navigator.vibrate(35); } catch (e) {}
+      processScannedCode(raw);
     }
 
     // ===== Normalización de códigos (soporta GS1 / Data Matrix) =====
